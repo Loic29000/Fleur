@@ -118,8 +118,36 @@ def render_shown(shown: list) -> str:
     return "".join(rows)
 
 
+POSITION_ORDER = ["UTG", "UTG+1", "UTG+2", "MP", "LJ", "HJ", "CO", "BTN", "SB", "BB"]
+POSITION_STATS = [("rfi", "RFI"), ("3bet", "3B"), ("fsteal", "FvS")]
+
+
+def render_positions(by_pos: dict[str, dict[str, float]], cfg: dict) -> str:
+    """Tableau RFI / 3-bet / fold face au vol par position."""
+    if not by_pos:
+        return ""
+    head = "".join(f"<td align=right><b>{label}</b></td>" for _, label in POSITION_STATS)
+    rows = ["<tr><td colspan=3 style='color:#bbbbbb'><br><b>Par position</b></td></tr>",
+            f"<tr><td colspan=3><table cellspacing=0 cellpadding=1><tr><td></td><td align=right>Mains</td>{head}</tr>"]
+    for pos in sorted(by_pos, key=lambda p: POSITION_ORDER.index(p) if p in POSITION_ORDER else 99):
+        totals = by_pos[pos]
+        stats = compute_all(totals)
+        cells = []
+        for key, _ in POSITION_STATS:
+            sv = stats[key]
+            if key == "fsteal" and pos not in ("SB", "BB"):
+                cells.append("<td></td>")
+                continue
+            sample = f"<span style='color:#777'>({int(sv.den)})</span>" if sv.den else ""
+            color = color_for(key, sv, totals.get("hands", 0), cfg)
+            cells.append(f"<td align=right>&nbsp;<span style='color:{color}'>{sv.format('pct')}</span>{sample}</td>")
+        rows.append(f"<tr><td>{pos}</td><td align=right>{int(totals.get('hands', 0))}</td>{''.join(cells)}</tr>")
+    rows.append("</table></td></tr>")
+    return "".join(rows)
+
+
 def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerNote | None = None,
-                 shown: list | None = None) -> str:
+                 shown: list | None = None, by_pos: dict | None = None) -> str:
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
     rows = [f"<tr><td colspan=3>{render_profile(totals, cfg)}{render_badge(note)}"
@@ -138,6 +166,7 @@ def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
             f"<b>{sv.format(sd.kind)}</b></td>"
             f"<td style='color:#888'>&nbsp;{sample}</td></tr>"
         )
+    rows.append(render_positions(by_pos or {}, cfg))
     rows.append(render_shown(shown or []))
     return f"<table cellspacing=0 cellpadding=1>{''.join(rows)}</table>"
 
@@ -185,12 +214,16 @@ class HudPanel(QWidget):
             self._popup.adjustSize()
 
     def popup_html(self) -> str:
+        db = self.table.manager.db
+        shown, by_pos = [], {}
         try:
-            shown = self.table.manager.db.last_shown(self.player, self.cfg.get("shown_hands_count", 8))
+            shown = db.last_shown(self.player, self.cfg.get("shown_hands_count", 8))
+            hand = self.table.last_hand
+            filters = stats_filter_args(self.cfg, hand) if hand else {}
+            by_pos = db.position_totals(self.player, **filters)
         except Exception:
-            log.exception("lecture des mains montrées impossible")
-            shown = []
-        return render_popup(self.player, self.totals, self.cfg, self.note, shown)
+            log.exception("lecture des détails du popup impossible")
+        return render_popup(self.player, self.totals, self.cfg, self.note, shown, by_pos)
 
     # -- étiquettes et notes (clic droit) ----------------------------------
     def contextMenuEvent(self, event):

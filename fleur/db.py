@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Iterable
 
 from fleur.parser import Hand
-from fleur.stats import ALL_COUNTERS, FLOAT_COUNTERS, hand_counters
+from fleur.stats import ALL_COUNTERS, FLOAT_COUNTERS, hand_counters, positions
 from fleur.summary import ShownHand, shown_hands
 
 # Version du schéma : on complète les données des anciennes bases à l'ouverture
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS hands (
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS player_hands (
     hand_id TEXT NOT NULL,
     player  TEXT NOT NULL,
     seat    INTEGER,
+    position TEXT,
     {", ".join(f"{k} {'REAL' if k in FLOAT_COUNTERS else 'INTEGER'} NOT NULL DEFAULT 0" for k in ALL_COUNTERS)},
     PRIMARY KEY (hand_id, player)
 );
@@ -90,6 +91,10 @@ class Database:
         self.conn = sqlite3.connect(self.path)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(player_hands)")}
+        if "position" not in cols:  # base créée avant la version 3
+            self.conn.execute("ALTER TABLE player_hands ADD COLUMN position TEXT")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_player_hands_pos ON player_hands(player, position)")
         self._migrate()
 
     def _migrate(self) -> None:
@@ -97,6 +102,8 @@ class Database:
         version = int(row[0]) if row else 1
         if version < 2:
             self.backfill_shown_hands()
+        if version < 3:
+            self.backfill_positions()
         if version != SCHEMA_VERSION:
             with self.conn:
                 self.conn.execute("INSERT OR REPLACE INTO meta VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -112,6 +119,23 @@ class Database:
                     count += self._insert_shown(parse_hand(raw))
                 except Exception:  # une main bizarre ne bloque pas la migration
                     continue
+        return count
+
+    def backfill_positions(self) -> int:
+        """Calcule la position des joueurs pour les mains déjà en base."""
+        from fleur.parser import parse_hand
+        from fleur.stats import positions
+        count = 0
+        cur = self.conn.execute("SELECT raw FROM hands")
+        with self.conn:
+            for (raw,) in cur.fetchall():
+                try:
+                    hand = parse_hand(raw)
+                    rows = [(pos, hand.hand_id, p) for p, pos in positions(hand).items()]
+                except Exception:
+                    continue
+                self.conn.executemany("UPDATE player_hands SET position=? WHERE hand_id=? AND player=?", rows)
+                count += 1
         return count
 
     def _insert_shown(self, hand: Hand) -> int:
@@ -133,8 +157,8 @@ class Database:
     def add_hands(self, hands: Iterable[Hand]) -> list[Hand]:
         """Ajoute les mains nouvelles et renvoie celles réellement insérées."""
         inserted = []
-        cols = ", ".join(["hand_id", "player", "seat", *ALL_COUNTERS])
-        marks = ", ".join("?" * (3 + len(ALL_COUNTERS)))
+        cols = ", ".join(["hand_id", "player", "seat", "position", *ALL_COUNTERS])
+        marks = ", ".join("?" * (4 + len(ALL_COUNTERS)))
         with self.conn:
             for hand in hands:
                 cur = self.conn.execute(
@@ -147,10 +171,12 @@ class Database:
                 )
                 if cur.rowcount == 0:
                     continue
+                pos = positions(hand)
                 for player, counters in hand_counters(hand).items():
                     self.conn.execute(
                         f"INSERT OR REPLACE INTO player_hands ({cols}) VALUES ({marks})",
-                        (hand.hand_id, player, hand.seat_of(player), *(counters[k] for k in ALL_COUNTERS)),
+                        (hand.hand_id, player, hand.seat_of(player), pos.get(player),
+                         *(counters[k] for k in ALL_COUNTERS)),
                     )
                 self._insert_shown(hand)
                 inserted.append(hand)
@@ -179,6 +205,19 @@ class Database:
         players = list(players)
         if not players:
             return {}
+        rows = self._grouped(players, "ph.player", max_seats, bb, seats_mode, stakes_mode)
+        result = {p: {k: 0.0 for k in ALL_COUNTERS} for p in players}
+        for row in rows:
+            result[row[0]] = dict(zip(ALL_COUNTERS, (v or 0 for v in row[1:])))
+        return result
+
+    def position_totals(self, player: str, max_seats: int | None = None, bb: float | None = None,
+                        seats_mode: str = "all", stakes_mode: str = "all") -> dict[str, dict[str, float]]:
+        """Compteurs d'un joueur par position (UTG, HJ, CO, BTN, SB, BB...)."""
+        rows = self._grouped([player], "ph.position", max_seats, bb, seats_mode, stakes_mode)
+        return {r[0]: dict(zip(ALL_COUNTERS, (v or 0 for v in r[1:]))) for r in rows if r[0]}
+
+    def _grouped(self, players: list[str], group: str, max_seats, bb, seats_mode, stakes_mode) -> list:
         sums = ", ".join(f"SUM(ph.{k})" for k in ALL_COUNTERS)
         marks = ", ".join("?" * len(players))
         where, params = [f"ph.player IN ({marks})"], list(players)
@@ -191,15 +230,10 @@ class Database:
             where.append("ABS(h.bb - ?) < 1e-6")
             params.append(bb)
         join = " JOIN hands h ON h.hand_id = ph.hand_id" if len(where) > 1 else ""
-        rows = self.conn.execute(
-            f"SELECT ph.player, {sums} FROM player_hands ph{join} WHERE {' AND '.join(where)} "
-            f"GROUP BY ph.player",
+        return self.conn.execute(
+            f"SELECT {group}, {sums} FROM player_hands ph{join} WHERE {' AND '.join(where)} GROUP BY {group}",
             params,
         ).fetchall()
-        result = {p: {k: 0.0 for k in ALL_COUNTERS} for p in players}
-        for row in rows:
-            result[row[0]] = dict(zip(ALL_COUNTERS, (v or 0 for v in row[1:])))
-        return result
 
     def top_players(self, limit: int = 20) -> list[tuple[str, int]]:
         return self.conn.execute(
