@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -30,11 +32,32 @@ CREATE TABLE IF NOT EXISTS player_hands (
     PRIMARY KEY (hand_id, player)
 );
 CREATE INDEX IF NOT EXISTS idx_player_hands_player ON player_hands(player);
+CREATE TABLE IF NOT EXISTS player_notes (
+    player     TEXT PRIMARY KEY,
+    tag        TEXT,
+    label      TEXT,
+    color      TEXT,
+    note       TEXT NOT NULL DEFAULT '',
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS files (
     path   TEXT PRIMARY KEY,
     offset INTEGER NOT NULL
 );
 """
+
+
+@dataclass
+class PlayerNote:
+    player: str
+    tag: str | None = None  # clé d'étiquette (fish, reg, ...) ou "perso"
+    label: str | None = None  # texte affiché de l'étiquette
+    color: str | None = None
+    note: str = ""
+
+    @property
+    def empty(self) -> bool:
+        return not self.tag and not self.note.strip()
 
 
 class Database:
@@ -106,6 +129,33 @@ class Database:
     def heroes(self) -> list[str]:
         return [r[0] for r in self.conn.execute(
             "SELECT DISTINCT hero FROM hands WHERE hero IS NOT NULL").fetchall()]
+
+    # -- notes et étiquettes -------------------------------------------------
+    def notes(self, players: Iterable[str]) -> dict[str, PlayerNote]:
+        players = list(players)
+        if not players:
+            return {}
+        marks = ", ".join("?" * len(players))
+        rows = self.conn.execute(
+            f"SELECT player, tag, label, color, note FROM player_notes WHERE player IN ({marks})", players
+        ).fetchall()
+        return {r[0]: PlayerNote(r[0], r[1], r[2], r[3], r[4] or "") for r in rows}
+
+    def note(self, player: str) -> PlayerNote:
+        return self.notes([player]).get(player) or PlayerNote(player)
+
+    def save_note(self, note: PlayerNote) -> None:
+        with self.conn:
+            if note.empty:
+                self.conn.execute("DELETE FROM player_notes WHERE player=?", (note.player,))
+                return
+            self.conn.execute(
+                "INSERT INTO player_notes(player, tag, label, color, note, updated_at) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(player) DO UPDATE SET tag=excluded.tag, label=excluded.label, "
+                "color=excluded.color, note=excluded.note, updated_at=excluded.updated_at",
+                (note.player, note.tag, note.label, note.color, note.note,
+                 datetime.now().isoformat(timespec="seconds")),
+            )
 
     # -- suivi des fichiers ----------------------------------------------------
     def file_offset(self, path: str) -> int:

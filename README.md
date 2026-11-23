@@ -73,7 +73,12 @@ vaut `true` dans la configuration.
 - **Glisser** un panneau pour le déplacer : la position est mémorisée pour toutes
   les tables du même format (6-max, 9-max…).
 - **Double-clic** : popup avec toutes les stats et les échantillons (ex. `3/12`).
-- Les couleurs s'activent à partir de 30 mains (réglable).
+- **Clic droit** : étiquette (fish, reg, nit, LAG, maniaque) ou « Étiquette perso et
+  note… » pour choisir un texte, une couleur et écrire une note libre. Le panneau
+  affiche une pastille de couleur et ✎ quand une note existe (survol = la note).
+  Notes et étiquettes sont stockées en base (table `player_notes`) ; la liste des
+  étiquettes se règle dans `player_tags`.
+- Les couleurs s'activent à partir de 10 mains (`min_hands_for_colors`).
 
 ### Panneau par défaut
 

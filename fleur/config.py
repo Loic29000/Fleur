@@ -70,6 +70,14 @@ DEFAULT_CONFIG: dict = {
         "wsd": [[45, R], [55, G], [999, B]],
         "bb100": [[0, R], [999, G]],
     },
+    # Étiquettes proposées au clic droit sur un panneau : clé -> [texte, couleur]
+    "player_tags": {
+        "fish": ["Fish", "#ff6b6b"],
+        "reg": ["Reg", "#4fa3ff"],
+        "nit": ["Nit", "#9aa5b1"],
+        "lag": ["LAG", "#ffa94d"],
+        "maniaque": ["Maniaque", "#d16bff"],
+    },
     # Nombre minimum de mains avant de colorer les stats
     "min_hands_for_colors": 10,
     "font_size": 9,

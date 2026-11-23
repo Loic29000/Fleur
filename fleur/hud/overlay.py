@@ -9,9 +9,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QFont, QGuiApplication
-from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
-from fleur.db import Database
+from fleur.db import Database, PlayerNote
 from fleur.hud import win32
 from fleur.hud.layouts import Layouts, visual_index
 from fleur.parser import Hand
@@ -36,10 +36,23 @@ def color_for(key: str, sv: StatValue, hands: float, cfg: dict) -> str:
     return rules[-1][1]
 
 
-def render_lines(player: str, totals: dict[str, float], cfg: dict) -> str:
+def render_badge(note: PlayerNote | None) -> str:
+    """Pastille de couleur + étiquette, et ✎ si une note existe."""
+    if not note or note.empty:
+        return ""
+    out = ""
+    if note.tag:
+        color = html.escape(note.color or "#e8e8e8")
+        out += f"<span style='color:{color}'>● {html.escape((note.label or '')[:10])}</span> "
+    if note.note.strip():
+        out += "<span style='color:#ffd84a'>✎</span> "
+    return out
+
+
+def render_lines(player: str, totals: dict[str, float], cfg: dict, note: PlayerNote | None = None) -> str:
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
-    rows = [f"<span style='color:#bbbbbb'>{html.escape(player[:16])}</span>"]
+    rows = [render_badge(note) + f"<span style='color:#bbbbbb'>{html.escape(player[:16])}</span>"]
     for line in cfg["hud_lines"]:
         parts = []
         for key in line:
@@ -55,10 +68,13 @@ def render_lines(player: str, totals: dict[str, float], cfg: dict) -> str:
     return "<br>".join(rows)
 
 
-def render_popup(player: str, totals: dict[str, float], cfg: dict) -> str:
+def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerNote | None = None) -> str:
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
-    rows = [f"<tr><td colspan=3><b>{html.escape(player)}</b></td></tr>"]
+    rows = [f"<tr><td colspan=3>{render_badge(note)}<b>{html.escape(player)}</b></td></tr>"]
+    if note and note.note.strip():
+        text = html.escape(note.note).replace("\n", "<br>")
+        rows.append(f"<tr><td colspan=3 style='color:#ffd84a'>{text}</td></tr>")
     for key in cfg["popup_stats"]:
         sd = STAT_BY_KEY.get(key)
         if not sd:
@@ -81,6 +97,7 @@ class HudPanel(QWidget):
         self.cfg = cfg
         self.player = ""
         self.totals: dict[str, float] = {}
+        self.note: PlayerNote | None = None
         self._drag_from: QPoint | None = None
         self._moved = False
         self._popup: QLabel | None = None
@@ -103,13 +120,47 @@ class HudPanel(QWidget):
         layout.addWidget(self.label)
         self.setWindowTitle("Fleur HUD")
 
-    def set_player(self, player: str, totals: dict[str, float]) -> None:
+    def set_player(self, player: str, totals: dict[str, float], note: PlayerNote | None = None) -> None:
         self.player = player
         self.totals = totals
-        self.label.setText(render_lines(player, totals, self.cfg))
+        self.note = note
+        self.label.setText(render_lines(player, totals, self.cfg, note))
+        self.setToolTip(html.escape(note.note) if note and note.note.strip() else "")
         self.adjustSize()
         if self._popup and self._popup.isVisible():
-            self._popup.setText(render_popup(player, totals, self.cfg))
+            self._popup.setText(render_popup(player, totals, self.cfg, note))
+            self._popup.adjustSize()
+
+    # -- étiquettes et notes (clic droit) ----------------------------------
+    def contextMenuEvent(self, event):
+        if not self.player:
+            return
+        from fleur.hud.notes_dialog import apply_tag, tag_choices
+        menu = QMenu(self)
+        menu.addSection(self.player)
+        current = self.note.tag if self.note else None
+        for key, label, color in tag_choices(self.cfg):
+            if key == "perso":
+                continue
+            action = menu.addAction(f"● {label}" if color else "Aucune étiquette")
+            action.setCheckable(True)
+            action.setChecked(key == current)
+            action.triggered.connect(lambda _=False, k=key: self._set_tag(k, apply_tag))
+        menu.addSeparator()
+        menu.addAction("Étiquette perso et note…", self.edit_note)
+        menu.exec(event.globalPos())
+
+    def _set_tag(self, key, apply_tag) -> None:
+        db = self.table.manager.db
+        note = apply_tag(db.note(self.player), key, self.cfg)
+        self.table.manager.save_note(note)
+
+    def edit_note(self) -> None:
+        from fleur.hud.notes_dialog import NoteDialog
+        dialog = NoteDialog(self.table.manager.db.note(self.player), self.cfg)
+        dialog.move(self.frameGeometry().bottomLeft() + QPoint(0, 4))
+        if dialog.exec():
+            self.table.manager.save_note(dialog.result_note())
 
     # -- déplacement à la souris ------------------------------------------
     def mousePressEvent(self, event):
@@ -140,7 +191,7 @@ class HudPanel(QWidget):
             self._popup.setTextFormat(Qt.TextFormat.RichText)
             self._popup.setStyleSheet("background:#1d1d1d; color:#e8e8e8; border:1px solid #555; padding:4px;")
             self._popup.mousePressEvent = lambda _e: self._popup.hide()
-        self._popup.setText(render_popup(self.player, self.totals, self.cfg))
+        self._popup.setText(render_popup(self.player, self.totals, self.cfg, self.note))
         self._popup.adjustSize()
         self._popup.move(self.frameGeometry().bottomLeft() + QPoint(0, 2))
         self._popup.show()
@@ -177,6 +228,7 @@ class TableHud:
         if not self.cfg.get("show_hero") and hand.hero:
             seated = {s: n for s, n in seated.items() if n != hand.hero}
         totals = self.manager.db.totals(seated.values())
+        notes = self.manager.db.notes(seated.values())
 
         for seat in list(self.panels):
             if seat not in seated:
@@ -188,7 +240,7 @@ class TableHud:
                 panel = HudPanel(self, vis, self.cfg)
                 self.panels[seat] = panel
             panel.visual = vis
-            panel.set_player(name, totals.get(name, {}))
+            panel.set_player(name, totals.get(name, {}), notes.get(name))
         self.attach_window()
         self.reposition(force=True)
 
@@ -384,6 +436,19 @@ class HudManager(QObject):
             hud.panels.clear()
             if hud.last_hand:
                 hud.update(hud.last_hand)
+
+    def save_note(self, note: PlayerNote) -> None:
+        """Enregistre et met à jour tous les panneaux de ce joueur (multi-tables)."""
+        try:
+            self.db.save_note(note)
+        except Exception:
+            log.exception("enregistrement de la note impossible (%s)", note.player)
+            return
+        saved = self.db.note(note.player)
+        for hud in self.tables.values():
+            for panel in hud.panels.values():
+                if panel.player == note.player:
+                    panel.set_player(panel.player, panel.totals, saved)
 
     def reposition_all(self, force: bool = False) -> None:
         for hud in self.tables.values():
