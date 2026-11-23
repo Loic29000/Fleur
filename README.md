@@ -84,6 +84,12 @@ vaut `true` dans la configuration.
 
 ### Analyse après coup
 
+**FleurAnalyse.exe** (`dist\FleurAnalyse\FleurAnalyse.exe`, construit par `build_exe.bat`) :
+fenêtre Windows qui regroupe le tableau de bord du héros (toutes les stats, courbes,
+fuites, résultats par position, limite et format) et toute l'analyse ci-dessous. Elle
+importe les nouvelles mains et se met à jour toute seule ; depuis le HUD, l'entrée
+« Analyse et tableau de bord du héros » du menu de l'icône l'ouvre directement.
+
 **Application d'analyse** (menu de l'icône → « Analyse : revue de mains, ranges,
 sessions… », ou `python -m fleur analyse`) : un petit serveur local
 (`127.0.0.1`, jeton aléatoire par session) ouvre dans le navigateur :

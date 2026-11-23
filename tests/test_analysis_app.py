@@ -56,3 +56,10 @@ def test_importer_thread_adds_new_hands(tmp_path):
     imp.stop_event.set()
     imp.join(5)
     assert count == 8
+
+
+def test_analyse_entry_point_accepts_any_option_order():
+    from fleur.analyse_main import build_argv
+    assert build_argv([]) == ["analyse"]
+    assert build_argv(["--sans-import"]) == ["analyse", "--sans-import"]
+    assert build_argv(["--sans-import", "--db", "x.db"]) == ["--db", "x.db", "analyse", "--sans-import"]
