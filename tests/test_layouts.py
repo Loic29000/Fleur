@@ -20,3 +20,16 @@ def test_hero_at_bottom_clockwise():
     assert visual_index(5, 4, 5, True) == 1
     assert visual_index(1, 4, 5, True) == 2
     assert visual_index(3, 4, 5, True) == 4
+
+
+def test_fit_table_keeps_winamax_proportions():
+    from fleur.hud.overlay import fit_table
+    # capture réelle : 1368x1031 -> table pleine fenêtre ; 1789x1027 -> bandes latérales
+    assert all(abs(a - b) < 0.5 for a, b in zip(fit_table(0, 0, 1368, 1031, 1.327), (0, 0, 1368, 1031)))
+    x, y, w, h = fit_table(0, 0, 1789, 1027, 1.327)
+    assert (y, h) == (0, 1027) and abs(x - 213) < 2 and abs(w - 1363) < 2
+    # pseudo BLV26 : x=371 sur la petite fenêtre, x=585 sur la grande
+    assert abs(x + 371 / 1368 * w - 585) < 4
+    x, y, w, h = fit_table(10, 20, 800, 1000, 1.327)
+    assert (x, w) == (10, 800) and abs(h - 800 / 1.327) < 1 and y > 20
+    assert fit_table(0, 0, 1789, 1027, 0) == (0, 0, 1789, 1027)

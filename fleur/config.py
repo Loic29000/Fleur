@@ -58,6 +58,9 @@ DEFAULT_CONFIG: dict = {
     "include_tournaments": False,
     # Importer aussi les tables en jetons fictifs (play money)
     "include_play_money": False,
+    # Proportions (largeur/hauteur) de la fenêtre de table Winamax quand la
+    # table la remplit exactement ; 0 = positions relatives à toute la fenêtre
+    "table_aspect_ratio": 1.327,
 }
 
 

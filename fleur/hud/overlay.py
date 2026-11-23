@@ -91,6 +91,10 @@ class HudPanel(QWidget):
         self.label = QLabel(self)
         self.label.setTextFormat(Qt.TextFormat.RichText)
         self.label.setStyleSheet("border:none;")
+        # Le texte riche d'un QLabel capte les clics : on les laisse au panneau
+        # pour pouvoir le déplacer et l'ouvrir au double-clic.
+        self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
         font = QFont("Consolas")
         font.setPointSize(cfg.get("font_size", 9))
         self.label.setFont(font)
@@ -212,7 +216,8 @@ class TableHud:
         rect = win32.client_rect(self.hwnd)
         if not rect or rect.width <= 0:
             return None
-        return _physical_to_logical(rect.x, rect.y, rect.width, rect.height)
+        area = _physical_to_logical(rect.x, rect.y, rect.width, rect.height)
+        return fit_table(*area, self.cfg.get("table_aspect_ratio", 0))
 
     def reposition(self, force: bool = False) -> None:
         if self.manager.hidden:
@@ -273,6 +278,19 @@ class TableHud:
         for p in self.panels.values():
             p.close_all()
         self.panels.clear()
+
+
+def fit_table(x: float, y: float, w: float, h: float, ratio: float) -> tuple[float, float, float, float]:
+    """Zone où la table est dessinée. Winamax garde les proportions de la
+    table quand on élargit (ou rétrécit) la fenêtre et la centre : les
+    positions des panneaux sont relatives à cette zone, pas à toute la fenêtre."""
+    if not ratio or w <= 0 or h <= 0:
+        return x, y, w, h
+    if w / h > ratio:  # fenêtre trop large : bandes à gauche et à droite
+        tw = h * ratio
+        return x + (w - tw) / 2, y, tw, h
+    th = w / ratio  # fenêtre trop haute : bandes en haut et en bas
+    return x, y + (h - th) / 2, w, th
 
 
 def _physical_to_logical(x: int, y: int, w: int, h: int) -> tuple[float, float, float, float]:
