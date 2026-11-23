@@ -33,12 +33,15 @@ def downloads_dir() -> Path:
 
 
 class AnalysisWindow(QMainWindow):
-    def __init__(self, server: AnalysisServer, tab: str = ""):
+    def __init__(self, server: AnalysisServer, tab: str = "", hide_on_close: bool = False):
         super().__init__()
-        from fleur.hud.tray import flower_icon
+        from fleur.hud.tray import app_icon
         self.server = server
-        self.setWindowTitle("Fleur — analyse")
-        self.setWindowIcon(flower_icon())
+        # Dans le programme complet, fermer la fenêtre la cache : le HUD continue
+        # dans la barre des tâches (Quitter depuis le menu de l'icône).
+        self.hide_on_close = hide_on_close
+        self.setWindowTitle("Fleur")
+        self.setWindowIcon(app_icon())
         self.resize(1360, 900)
         self.view = QWebEngineView(self)
         self.setCentralWidget(self.view)
@@ -46,6 +49,16 @@ class AnalysisWindow(QMainWindow):
         profile = self.view.page().profile()
         profile.downloadRequested.connect(self._download)
         self.view.setUrl(QUrl(server.url + (f"#{tab}" if tab else "")))
+
+    def show_tab(self, tab: str) -> None:
+        self.view.page().runJavaScript(f"typeof show === 'function' && show({tab!r})")
+
+    def closeEvent(self, event):
+        if self.hide_on_close:
+            event.ignore()
+            self.hide()
+        else:
+            super().closeEvent(event)
 
     def _download(self, request: "QWebEngineDownloadRequest") -> None:
         """Exports (texte, image) enregistrés dans le dossier Téléchargements."""
@@ -88,12 +101,12 @@ class _Importer(threading.Thread):
         db.close()
 
 
-def open_window(server: AnalysisServer, tab: str = "") -> "AnalysisWindow | None":
+def open_window(server: AnalysisServer, tab: str = "", hide_on_close: bool = False) -> "AnalysisWindow | None":
     """Ouvre la fenêtre (ou le navigateur si Qt WebEngine manque)."""
     if not HAS_WEBENGINE:
         server.open(tab)
         return None
-    window = AnalysisWindow(server, tab)
+    window = AnalysisWindow(server, tab, hide_on_close)
     window.show()
     window.raise_()
     window.activateWindow()

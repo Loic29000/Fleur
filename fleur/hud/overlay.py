@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import logging
+import sys
 import time
 from pathlib import Path
 
@@ -683,14 +684,62 @@ class HudManager(QObject):
             hud.reposition(force=force)
 
 
+INSTANCE_NAME = "fleur-poker-hud"
+
+
+def notify_running_instance(message: bytes = b"show") -> bool:
+    """Si Fleur tourne déjà, lui demande d'ouvrir sa fenêtre. Vrai si c'est le cas."""
+    from PySide6.QtNetwork import QLocalSocket
+    sock = QLocalSocket()
+    sock.connectToServer(INSTANCE_NAME)
+    if not sock.waitForConnected(300):
+        return False
+    sock.write(message)
+    sock.flush()
+    sock.waitForBytesWritten(300)
+    sock.disconnectFromServer()
+    return True
+
+
+def set_windows_app_id() -> None:
+    """Icône de Fleur (et non de Python) dans la barre des tâches Windows."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Fleur.Poker.HUD")
+        except Exception:
+            pass
+
+
 def run_hud(db: Database, watcher: HistoryWatcher, cfg: dict, layouts_path: Path,
-            history_dirs: list[Path] | None = None) -> int:
+            history_dirs: list[Path] | None = None, open_window: bool = True) -> int:
+    set_windows_app_id()
     app = QApplication.instance() or QApplication([])
     app.setQuitOnLastWindowClosed(False)
+    from fleur.hud.tray import Tray, app_icon
+    app.setWindowIcon(app_icon())
+    if notify_running_instance():
+        log.info("Fleur tourne déjà : sa fenêtre est ouverte à la place")
+        return 0
     manager = HudManager(db, watcher, cfg, layouts_path)
-    from fleur.hud.tray import Tray
     tray = Tray(app, manager, history_dirs or [])
-    app._fleur_refs = (manager, tray)  # garde les objets en vie
+
+    # Instance unique : un second lancement (raccourci, double-clic) ouvre la fenêtre
+    from PySide6.QtNetwork import QLocalServer
+    QLocalServer.removeServer(INSTANCE_NAME)
+    server = QLocalServer()
+
+    def on_connection():
+        sock = server.nextPendingConnection()
+        if sock is not None:
+            sock.waitForReadyRead(300)
+            sock.readAll()
+            tray.open_analysis()
+    server.newConnection.connect(on_connection)
+    server.listen(INSTANCE_NAME)
+    app._fleur_refs = (manager, tray, server)  # garde les objets en vie
+    if open_window:
+        QTimer.singleShot(300, tray.open_analysis)
     log.info("HUD lancé. Ouvrez une table Winamax ; menu dans la barre des tâches, Ctrl+C pour quitter.")
     # Laisse Ctrl+C fonctionner dans la console
     import signal

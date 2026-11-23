@@ -23,6 +23,16 @@ STAKES_CHOICES = [("all", "Toutes les limites"), ("same", "Même limite que la t
 log = logging.getLogger("fleur")
 
 
+def asset_path(name: str) -> Path:
+    """Fichier de fleur/assets (aussi dans l'exe construit par PyInstaller)."""
+    return Path(__file__).resolve().parents[1] / "assets" / name
+
+
+def app_icon() -> QIcon:
+    path = asset_path("fleur.ico")
+    return QIcon(str(path)) if path.is_file() else flower_icon()
+
+
 def flower_icon(paused: bool = False) -> QIcon:
     size = 64
     pm = QPixmap(size, size)
@@ -59,7 +69,7 @@ class Tray:
         self._warned_problems = 0
         self._warned_windows: set[str] = set()
 
-        self.icon = QSystemTrayIcon(flower_icon(), app)
+        self.icon = QSystemTrayIcon(app_icon(), app)
         self.menu = QMenu()
         self.status = QAction("", self.menu)
         self.status.setEnabled(False)
@@ -75,7 +85,10 @@ class Tray:
         self._add("Réinitialiser la position des panneaux", self.manager.reset_layouts)
         self._build_filter_menu()
         self.menu.addSeparator()
-        self._add("Analyse et tableau de bord du héros", self.open_analysis)
+        open_action = self._add("Ouvrir Fleur (tableau de bord, mains, étude…)", self.open_analysis)
+        font = open_action.font()
+        font.setBold(True)
+        open_action.setFont(font)
         self._add("Tableau de bord du héros", self.open_dashboard)
         self._add("Sauvegarder la base", self.backup)
         self.menu.addSeparator()
@@ -108,6 +121,8 @@ class Tray:
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_problems)
         self.timer.start(5000)
+
+        QTimer.singleShot(5000, self._migrate_shortcuts)
 
         # Sauvegarde automatique : au démarrage puis vérification toutes les heures
         self.backup_timer = QTimer()
@@ -149,6 +164,17 @@ class Tray:
         self.manager.refresh_all()
         log.info("réglages modifiés : %s", changes)
 
+    def _migrate_shortcuts(self) -> None:
+        """Anciens raccourcis « Fleur HUD » / « Fleur Analyse » -> un seul « Fleur »."""
+        if not getattr(sys, "frozen", False):
+            return
+        from fleur import install
+        try:
+            if install.migrate_shortcuts():
+                log.info("anciens raccourcis remplacés par « Fleur »")
+        except Exception:
+            log.exception("migration des raccourcis impossible")
+
     def _sync_install_menu(self) -> None:
         from fleur import install
         self.autostart.setChecked(install.autostart_enabled())
@@ -172,7 +198,7 @@ class Tray:
             log.exception("raccourcis impossibles")
             self.notify("Fleur", f"Raccourcis impossibles : {exc}", warning=True)
             return
-        self.notify("Raccourcis créés", f"{len(made)} raccourci(s) : « Fleur HUD » et « Fleur Analyse ».")
+        self.notify("Raccourcis créés", f"Raccourci « Fleur » créé ({len(made)} emplacement(s)).")
 
     def open_settings(self) -> None:
         self.open_analysis(tab="reglages")
@@ -263,7 +289,7 @@ class Tray:
         hidden = not self.manager.hidden
         self.manager.set_hidden(hidden)
         self.toggle.setText("Afficher le HUD" if hidden else "Masquer le HUD")
-        self.icon.setIcon(flower_icon(paused=hidden))
+        self.icon.setIcon(flower_icon(paused=True) if hidden else app_icon())
         self.refresh_status()
 
     def reload_config(self) -> None:
@@ -272,17 +298,7 @@ class Tray:
         self.notify("Fleur", "Configuration rechargée.")
 
     def open_analysis(self, tab: str = "") -> None:
-        """Ouvre l'application d'analyse : FleurAnalyse.exe s'il est installé à côté,
-        sinon une fenêtre (ou le navigateur) servie par ce programme."""
-        exe = Path(sys.executable).parent / "FleurAnalyse" / "FleurAnalyse.exe"
-        if getattr(sys, "frozen", False) and exe.is_file():
-            try:
-                # le HUD importe déjà les mains : l'analyse n'a pas besoin de le faire
-                subprocess.Popen([str(exe), "--sans-import"] + (["--onglet", tab] if tab else []),
-                                 cwd=str(exe.parent))
-                return
-            except OSError as exc:
-                log.warning("FleurAnalyse.exe impossible à lancer : %s", exc)
+        """Ouvre la fenêtre principale de Fleur (dans ce même programme)."""
         try:
             if getattr(self, "_analysis", None) is None:
                 from fleur.hud import win32
@@ -292,11 +308,15 @@ class Tray:
                     table_open=lambda: bool(self.manager.tables) or win32.winamax_table_open(),
                 ).start()
             from fleur.gui.analysis_window import open_window
-            if getattr(self, "_analysis_window", None) is not None and self._analysis_window.isVisible():
-                self._analysis_window.raise_()
-                self._analysis_window.activateWindow()
+            window = getattr(self, "_analysis_window", None)
+            if window is not None:
+                if tab:
+                    window.show_tab(tab)
+                window.showNormal()
+                window.raise_()
+                window.activateWindow()
             else:
-                self._analysis_window = open_window(self._analysis, tab)
+                self._analysis_window = open_window(self._analysis, tab, hide_on_close=True)
         except Exception as exc:
             log.exception("application d'analyse impossible")
             self.notify("Fleur", f"Analyse impossible : {exc}", warning=True)
@@ -368,8 +388,8 @@ class Tray:
         }
 
     def _on_activated(self, reason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.toggle_hidden()
+        if reason in (QSystemTrayIcon.ActivationReason.DoubleClick, QSystemTrayIcon.ActivationReason.Trigger):
+            self.open_analysis()
 
     def quit(self) -> None:
         log.info("arrêt demandé depuis le menu")

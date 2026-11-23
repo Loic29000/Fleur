@@ -144,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command")
     hud = sub.add_parser("hud", help="lance le HUD (par défaut)")
     hud.add_argument("--no-import", action="store_true", help="ne pas importer l'historique existant au démarrage")
+    hud.add_argument("--sans-fenetre", action="store_true",
+                     help="ne pas ouvrir la fenêtre au démarrage (icône seule, ex. lancement avec Windows)")
     sub.add_parser("import", help="importe tout l'historique dans la base")
     st = sub.add_parser("stats", help="affiche les stats d'un ou plusieurs joueurs")
     st.add_argument("players", nargs="*")
@@ -171,6 +173,13 @@ def main(argv: list[str] | None = None) -> int:
     command = args.command or "hud"
     diagnostics.setup_logging(console=command == "hud")
     diagnostics.log.info("démarrage : commande %s", command)
+    if command == "hud":
+        # Fleur tourne déjà : on lui demande d'ouvrir sa fenêtre et on s'arrête là
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from fleur.hud.overlay import notify_running_instance
+        if notify_running_instance():
+            return 0
     if command == "windows":
         return cmd_windows()
     if command == "installer":
@@ -253,9 +262,24 @@ def main(argv: list[str] | None = None) -> int:
                 print(message)
             return 1
         if not getattr(args, "no_import", False):
-            cmd_import(db, dirs, cfg)
+            start = None
+            if sys.stdout is None:  # pas de console : petite fenêtre pendant la lecture
+                from PySide6.QtCore import Qt
+                from PySide6.QtWidgets import QApplication, QLabel
+                start = QLabel("Fleur démarre : lecture des nouvelles mains…")
+                start.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+                start.setStyleSheet("background:#1b1e23; color:#e8e8e8; padding:18px 26px; font-size:14px;"
+                                    "border:1px solid #ff6fa8;")
+                start.show()
+                QApplication.processEvents()
+            try:
+                cmd_import(db, dirs, cfg)
+            finally:
+                if start is not None:
+                    start.close()
         from fleur.hud.overlay import run_hud
         return run_hud(db, make_watcher(db, dirs, diagnostics.get(), cfg), cfg,
-                       app_dir() / "layouts.json", dirs)
+                       app_dir() / "layouts.json", dirs,
+                       open_window=not getattr(args, "sans_fenetre", False))
     finally:
         db.close()
