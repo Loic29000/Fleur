@@ -10,6 +10,21 @@ from fleur.replay import anonymize, replay
 from fleur.web.server import AnalysisApp, ApiError
 
 
+def _counter_help() -> dict[str, str]:
+    """Aide de chaque compteur, tirée des stats intégrées qui l'utilisent."""
+    from fleur.stats import STAT_DEFS
+    out: dict[str, str] = {"hands": "nombre de mains", "net": "gains en €", "net_bb": "gains en big blinds",
+                           "n_bets": "mises postflop", "n_overbets": "mises postflop de plus d'un pot"}
+    for sd in STAT_DEFS:
+        out.setdefault(sd.num, f"réalisé — {sd.label} : {sd.description}")
+        if sd.den and "+" not in sd.den:
+            out.setdefault(sd.den, f"occasions — {sd.label} : {sd.description}")
+    return out
+
+
+_COUNTER_HELP = _counter_help()
+
+
 def _hero(app: AnalysisApp, query: dict) -> str:
     hero = query.get("hero") or analysis.main_hero(app.db())
     if not hero:
@@ -85,6 +100,63 @@ def install(app: AnalysisApp) -> None:
     def allin_ev(app, _id, query, _body):
         from fleur.allin import hero_allin_report
         return "json", hero_allin_report(app.db(), _hero(app, query))
+
+    @app.route("GET /api/custom_stats")
+    def custom_stats(app, _id, query, _body):
+        from fleur.stats import ALL_COUNTERS, STAT_BY_KEY, compute_stat
+        specs = app.cfg.get("custom_stats") or []
+        hero = analysis.main_hero(app.db())
+        totals = app.db().totals([hero])[hero] if hero else {}
+        out = []
+        for spec in specs:
+            sd = STAT_BY_KEY.get(spec.get("key"))
+            value = compute_stat(totals, sd).format(sd.kind) if sd else "invalide"
+            out.append({**spec, "hero_value": value})
+        return "json", {"stats": out, "counters": [{"key": k, "description": _COUNTER_HELP.get(k, "")}
+                                                    for k in ALL_COUNTERS]}
+
+    @app.route("POST /api/custom_stats/test")
+    def custom_test(app, _id, query, body):
+        from fleur.stats import compute_stat, make_custom_stat
+        try:
+            sd = make_custom_stat(body or {})
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+        hero = analysis.main_hero(app.db())
+        totals = app.db().totals([hero])[hero] if hero else {}
+        sv = compute_stat(totals, sd)
+        return "json", {"value": sv.format(sd.kind), "num": round(sv.num, 2), "den": round(sv.den, 2)}
+
+    @app.route("POST /api/custom_stats/save")
+    def custom_save(app, _id, query, body):
+        from fleur.config import load_config, save_config
+        from fleur.stats import make_custom_stat, set_custom_stats
+        try:
+            sd = make_custom_stat(body or {})
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+        spec = {"key": sd.key, "label": sd.label, "num": sd.num, "den": sd.den, "kind": sd.kind,
+                "description": sd.description}
+        cfg = load_config()
+        specs = [s for s in cfg.get("custom_stats") or [] if s.get("key") != sd.key] + [spec]
+        cfg["custom_stats"] = specs
+        save_config(cfg)
+        app.cfg["custom_stats"] = specs
+        set_custom_stats(specs)
+        return "json", spec
+
+    @app.route("POST /api/custom_stats/delete")
+    def custom_delete(app, _id, query, body):
+        from fleur.config import load_config, save_config
+        from fleur.stats import set_custom_stats
+        key = (body or {}).get("key")
+        cfg = load_config()
+        specs = [s for s in cfg.get("custom_stats") or [] if s.get("key") != key]
+        cfg["custom_stats"] = specs
+        save_config(cfg)
+        app.cfg["custom_stats"] = specs
+        set_custom_stats(specs)
+        return "json", {"deleted": key}
 
     @app.route("POST /api/equity")
     def equity_calc(app, _id, query, body):

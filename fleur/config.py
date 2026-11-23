@@ -69,6 +69,16 @@ DEFAULT_CONFIG: dict = {
         "fcbet_t": [[35, R], [55, G], [999, B]],
         "wsd": [[45, R], [55, G], [999, B]],
         "bb100": [[0, R], [999, G]],
+        "bet_f": [[35, B], [55, G], [70, Y], [999, R]],
+        "bet_t": [[30, B], [50, G], [65, Y], [999, R]],
+        "bet_r": [[25, B], [45, G], [60, Y], [999, R]],
+        "fvb_f": [[35, R], [55, G], [999, B]],
+        "fvb_t": [[35, R], [55, G], [999, B]],
+        "fvb_r": [[30, R], [50, G], [999, B]],
+        "fv_small": [[25, R], [45, G], [999, B]],
+        "fv_med": [[35, R], [55, G], [999, B]],
+        "fv_big": [[40, R], [65, G], [999, B]],
+        "overbet": [[5, G], [12, Y], [999, R]],
     },
     # Étiquettes proposées au clic droit sur un panneau : clé -> [texte, couleur]
     "player_tags": {
@@ -96,6 +106,9 @@ DEFAULT_CONFIG: dict = {
     },
     # Nombre de mains montrées à l'abattage listées dans le popup
     "shown_hands_count": 8,
+    # Stats personnalisées (éditeur dans l'application d'analyse) :
+    # [{"key", "label", "num", "den", "kind": pct|ratio|count, "description"}]
+    "custom_stats": [],
     # Nombre minimum de mains avant de colorer les stats
     "min_hands_for_colors": 10,
     "font_size": 9,
@@ -135,6 +148,10 @@ def load_config(path: Path | None = None) -> dict:
             print(f"[fleur] config illisible ({exc}), valeurs par défaut utilisées")
     else:
         save_config(cfg, path)
+    # Stats personnalisées : actives dès le chargement de la configuration
+    from fleur.stats import set_custom_stats
+    for error in set_custom_stats(cfg.get("custom_stats") or []):
+        print(f"[fleur] stat perso ignorée : {error}")
     return cfg
 
 

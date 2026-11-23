@@ -121,9 +121,65 @@ class StatValue:
         return f"{self.value:.0f}"
 
 
+BUILTIN_KEYS = frozenset(STAT_BY_KEY)
+_KNOWN_COUNTERS = frozenset(ALL_COUNTERS)
+CUSTOM_KEYS: set[str] = set()
+
+
+def _value(expr: str, totals: dict[str, float]) -> float:
+    if expr in totals or expr in _KNOWN_COUNTERS:  # cas courant : un seul compteur
+        return totals.get(expr, 0.0)
+    from fleur.formulas import evaluate
+    return evaluate(expr, totals, _KNOWN_COUNTERS)
+
+
+def make_custom_stat(spec: dict) -> StatDef:
+    """Valide et crée une stat perso : {key, label, num, den, kind, description}."""
+    import re
+    from fleur.formulas import FormulaError, compile_formula
+    key = str(spec.get("key", "")).strip()
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,23}", key):
+        raise FormulaError("clé invalide : lettres minuscules, chiffres et _ (24 caractères au plus)")
+    if key in BUILTIN_KEYS:
+        raise FormulaError(f"la clé « {key} » est déjà une stat intégrée")
+    kind = spec.get("kind", "pct")
+    if kind not in ("pct", "ratio", "count"):
+        raise FormulaError("type invalide (pct, ratio ou count)")
+    num, den = str(spec.get("num", "")).strip(), str(spec.get("den", "") or "").strip()
+    compile_formula(num, _KNOWN_COUNTERS)
+    if den:
+        compile_formula(den, _KNOWN_COUNTERS)
+    elif kind != "count":
+        raise FormulaError("un pourcentage ou un ratio a besoin d'un dénominateur")
+    label = str(spec.get("label") or key)[:12]
+    return StatDef(key, label, num, den, kind, str(spec.get("description", ""))[:200])
+
+
+def set_custom_stats(specs: list[dict]) -> list[str]:
+    """Remplace les stats perso actives. Renvoie les erreurs (stats ignorées)."""
+    errors = []
+    for key in list(CUSTOM_KEYS):
+        STAT_BY_KEY.pop(key, None)
+    STAT_DEFS[:] = [s for s in STAT_DEFS if s.key not in CUSTOM_KEYS]
+    CUSTOM_KEYS.clear()
+    for spec in specs or []:
+        try:
+            sd = make_custom_stat(spec)
+        except ValueError as exc:
+            errors.append(f"{spec.get('key', '?')} : {exc}")
+            continue
+        STAT_DEFS.append(sd)
+        STAT_BY_KEY[sd.key] = sd
+        CUSTOM_KEYS.add(sd.key)
+    return errors
+
+
 def compute_stat(totals: dict[str, float], stat: StatDef) -> StatValue:
-    num = totals.get(stat.num, 0.0)
-    den = sum(totals.get(part, 0.0) for part in stat.den.split("+")) if stat.den else 0.0
+    try:
+        num = _value(stat.num, totals)
+        den = _value(stat.den, totals) if stat.den else 0.0
+    except ValueError:
+        return StatValue(None, 0.0, 0.0)
     if stat.kind in ("count", "money"):
         return StatValue(num, num, den)
     if not den:
