@@ -108,3 +108,14 @@ def set_owner(child_hwnd: int, owner_hwnd: int) -> bool:
         return False
     _SetWindowLongPtr(child_hwnd, GWLP_HWNDPARENT, owner_hwnd)
     return True
+
+
+def winamax_table_open() -> bool:
+    """Vrai si une fenêtre de table Winamax est ouverte (« Winamax <table> »).
+    La fenêtre du lobby s'appelle simplement « Winamax »."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        return any(w.title.startswith("Winamax ") and w.title.strip() != "Winamax" for w in list_windows())
+    except Exception:
+        return True  # dans le doute, on bloque le calculateur

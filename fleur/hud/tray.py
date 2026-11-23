@@ -73,7 +73,9 @@ class Tray:
         self._add("Réinitialiser la position des panneaux", self.manager.reset_layouts)
         self._build_filter_menu()
         self.menu.addSeparator()
+        self._add("Analyse : revue de mains, ranges, sessions…", self.open_analysis)
         self._add("Tableau de bord du héros", self.open_dashboard)
+        self._add("Sauvegarder la base", self.backup)
         self.menu.addSeparator()
         self._add("Ouvrir le dossier de configuration", lambda: open_folder(app_dir()))
         self._add("Ouvrir le dossier des historiques", self.open_history)
@@ -191,6 +193,31 @@ class Tray:
         self._sync_filter_menu()
         self.notify("Fleur", "Configuration rechargée.")
 
+    def open_analysis(self) -> None:
+        """Démarre (une fois) le serveur local d'analyse et l'ouvre dans le navigateur."""
+        try:
+            if getattr(self, "_analysis", None) is None:
+                from fleur.hud import win32
+                from fleur.web.server import AnalysisServer
+                self._analysis = AnalysisServer(
+                    self.manager.db.path, self.manager.cfg,
+                    table_open=lambda: bool(self.manager.tables) or win32.winamax_table_open(),
+                ).start()
+            self._analysis.open()
+        except Exception as exc:
+            log.exception("application d'analyse impossible")
+            self.notify("Fleur", f"Analyse impossible : {exc}", warning=True)
+
+    def backup(self) -> None:
+        from fleur.backup import backup_database
+        try:
+            out = backup_database(self.manager.db)
+        except Exception as exc:
+            log.exception("sauvegarde impossible")
+            self.notify("Fleur", f"Sauvegarde impossible : {exc}", warning=True)
+            return
+        self.notify("Base sauvegardée", str(out))
+
     def open_dashboard(self) -> None:
         from fleur.dashboard import write_dashboard
         try:
@@ -246,5 +273,7 @@ class Tray:
 
     def quit(self) -> None:
         log.info("arrêt demandé depuis le menu")
+        if getattr(self, "_analysis", None) is not None:
+            self._analysis.stop()
         self.icon.hide()
         self.app.quit()

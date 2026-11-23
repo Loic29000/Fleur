@@ -13,7 +13,7 @@ from fleur.stats import ALL_COUNTERS, FLOAT_COUNTERS, hand_counters, positions
 from fleur.summary import ShownHand, shown_hands
 
 # Version du schéma : on complète les données des anciennes bases à l'ouverture
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS hands (
@@ -83,60 +83,80 @@ class PlayerNote:
         return not self.tag and not self.note.strip()
 
 
+# Colonnes ajoutées à `hands` au fil des versions (nom, type)
+_HAND_EXTRA = [("pot", "REAL"), ("rake", "REAL"), ("hero_cards", "TEXT")]
+
+
 class Database:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, on_progress=None):
         self.path = str(path)
+        self.on_progress = on_progress  # rappel(texte) pendant une migration longue
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path)
+        self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
-        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(player_hands)")}
-        if "position" not in cols:  # base créée avant la version 3
-            self.conn.execute("ALTER TABLE player_hands ADD COLUMN position TEXT")
+        self._ensure_columns()
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_player_hands_pos ON player_hands(player, position)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_hands_hero ON hands(hero, played_at)")
         self._migrate()
+
+    def _ensure_columns(self) -> None:
+        """Ajoute les colonnes apparues depuis la création de la base."""
+        ph = {r[1] for r in self.conn.execute("PRAGMA table_info(player_hands)")}
+        if "position" not in ph:
+            self.conn.execute("ALTER TABLE player_hands ADD COLUMN position TEXT")
+        for k in ALL_COUNTERS:
+            if k not in ph:
+                kind = "REAL" if k in FLOAT_COUNTERS else "INTEGER"
+                self.conn.execute(f"ALTER TABLE player_hands ADD COLUMN {k} {kind} NOT NULL DEFAULT 0")
+        hc = {r[1] for r in self.conn.execute("PRAGMA table_info(hands)")}
+        for name, kind in _HAND_EXTRA:
+            if name not in hc:
+                self.conn.execute(f"ALTER TABLE hands ADD COLUMN {name} {kind}")
+        self.conn.commit()
 
     def _migrate(self) -> None:
         row = self.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         version = int(row[0]) if row else 1
-        if version < 2:
-            self.backfill_shown_hands()
-        if version < 3:
-            self.backfill_positions()
+        if version < SCHEMA_VERSION and self.hand_count():
+            self.rebuild_derived()
         if version != SCHEMA_VERSION:
             with self.conn:
                 self.conn.execute("INSERT OR REPLACE INTO meta VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
 
-    def backfill_shown_hands(self) -> int:
-        """Remplit shown_hands à partir des mains déjà en base (bases antérieures)."""
+    def rebuild_derived(self) -> int:
+        """Recalcule tout ce qui dérive du texte des mains (compteurs, positions,
+        mains montrées, pot...). Utilisé quand une nouvelle version ajoute des stats."""
         from fleur.parser import parse_hand
-        count = 0
-        cur = self.conn.execute("SELECT raw FROM hands WHERE raw LIKE '%shows [%'")
+        total = self.hand_count()
+        done = 0
+        rows = self.conn.execute("SELECT raw FROM hands").fetchall()
         with self.conn:
-            for (raw,) in cur.fetchall():
-                try:
-                    count += self._insert_shown(parse_hand(raw))
-                except Exception:  # une main bizarre ne bloque pas la migration
-                    continue
-        return count
-
-    def backfill_positions(self) -> int:
-        """Calcule la position des joueurs pour les mains déjà en base."""
-        from fleur.parser import parse_hand
-        from fleur.stats import positions
-        count = 0
-        cur = self.conn.execute("SELECT raw FROM hands")
-        with self.conn:
-            for (raw,) in cur.fetchall():
+            self.conn.execute("DELETE FROM shown_hands")
+            for (raw,) in rows:
                 try:
                     hand = parse_hand(raw)
-                    rows = [(pos, hand.hand_id, p) for p, pos in positions(hand).items()]
-                except Exception:
+                except Exception:  # une main bizarre ne bloque pas la migration
                     continue
-                self.conn.executemany("UPDATE player_hands SET position=? WHERE hand_id=? AND player=?", rows)
-                count += 1
-        return count
+                self._write_derived(hand)
+                done += 1
+                if self.on_progress and done % 5000 == 0:
+                    self.on_progress(f"mise à jour de la base : {done}/{total} mains")
+        return done
+
+    def _write_derived(self, hand: Hand) -> None:
+        cols = ", ".join(["hand_id", "player", "seat", "position", *ALL_COUNTERS])
+        marks = ", ".join("?" * (4 + len(ALL_COUNTERS)))
+        self.conn.execute("UPDATE hands SET pot=?, rake=?, hero_cards=? WHERE hand_id=?",
+                          (hand.total_pot, hand.rake, hand.hero_cards, hand.hand_id))
+        pos = positions(hand)
+        self.conn.executemany(
+            f"INSERT OR REPLACE INTO player_hands ({cols}) VALUES ({marks})",
+            [(hand.hand_id, player, hand.seat_of(player), pos.get(player), *(c[k] for k in ALL_COUNTERS))
+             for player, c in hand_counters(hand).items()],
+        )
+        self._insert_shown(hand)
 
     def _insert_shown(self, hand: Hand) -> int:
         rows = shown_hands(hand)
@@ -154,15 +174,18 @@ class Database:
     def has_hand(self, hand_id: str) -> bool:
         return self.conn.execute("SELECT 1 FROM hands WHERE hand_id=?", (hand_id,)).fetchone() is not None
 
+    def raw_hand(self, hand_id: str) -> str | None:
+        row = self.conn.execute("SELECT raw FROM hands WHERE hand_id=?", (hand_id,)).fetchone()
+        return row[0] if row else None
+
     def add_hands(self, hands: Iterable[Hand]) -> list[Hand]:
         """Ajoute les mains nouvelles et renvoie celles réellement insérées."""
         inserted = []
-        cols = ", ".join(["hand_id", "player", "seat", "position", *ALL_COUNTERS])
-        marks = ", ".join("?" * (4 + len(ALL_COUNTERS)))
         with self.conn:
             for hand in hands:
                 cur = self.conn.execute(
-                    "INSERT OR IGNORE INTO hands VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO hands (hand_id, table_name, kind, game, played_at, sb, bb, "
+                    "max_seats, hero, raw) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
                         hand.hand_id, hand.table, hand.kind, hand.game,
                         hand.played_at.isoformat() if hand.played_at else None,
@@ -171,14 +194,7 @@ class Database:
                 )
                 if cur.rowcount == 0:
                     continue
-                pos = positions(hand)
-                for player, counters in hand_counters(hand).items():
-                    self.conn.execute(
-                        f"INSERT OR REPLACE INTO player_hands ({cols}) VALUES ({marks})",
-                        (hand.hand_id, player, hand.seat_of(player), pos.get(player),
-                         *(counters[k] for k in ALL_COUNTERS)),
-                    )
-                self._insert_shown(hand)
+                self._write_derived(hand)
                 inserted.append(hand)
         return inserted
 

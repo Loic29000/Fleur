@@ -59,7 +59,7 @@ def test_old_database_is_backfilled(tmp_path, hands):
     db.close()
     db = Database(path)
     assert db.last_shown("Eve")[0].cards == "Ad Kd"
-    assert sqlite3.connect(path).execute("SELECT value FROM meta").fetchone()[0] == "3"
+    assert sqlite3.connect(path).execute("SELECT value FROM meta").fetchone()[0] == str(__import__("fleur.db").db.SCHEMA_VERSION)
 
 
 def test_popup_lists_shown_hands(hands):

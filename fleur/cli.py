@@ -1,4 +1,4 @@
-"""Ligne de commande : python -m fleur [hud|import|stats|dashboard|fuites|windows|config|diagnostic]."""
+"""Ligne de commande : python -m fleur [hud|import|stats|analyse|dashboard|fuites|sauvegarde|windows|config|diagnostic]."""
 
 from __future__ import annotations
 
@@ -99,6 +99,26 @@ def cmd_leaks(db: Database, hero: str | None) -> int:
     return 0
 
 
+def cmd_analysis(db: Database, cfg: dict) -> int:
+    from fleur.hud import win32
+    from fleur.web.server import AnalysisServer
+    server = AnalysisServer(db.path, cfg, table_open=win32.winamax_table_open).start()
+    print(f"Application d'analyse : {server.url}")
+    print("Ctrl+C pour arrêter.")
+    server.open()
+    try:
+        server.thread.join()
+    except KeyboardInterrupt:
+        server.stop()
+    return 0
+
+
+def cmd_backup(db: Database) -> int:
+    from fleur.backup import backup_database
+    print(f"Base sauvegardée : {backup_database(db)}")
+    return 0
+
+
 def cmd_windows() -> int:
     from fleur.hud import win32
     if not win32.IS_WINDOWS:
@@ -126,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:
     dash = sub.add_parser("dashboard", help="tableau de bord du héros (page HTML locale)")
     dash.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
     dash.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
+    sub.add_parser("analyse", help="application d'analyse dans le navigateur (revue de mains, ranges...)")
+    sub.add_parser("sauvegarde", help="sauvegarde la base dans Documents\Fleur\sauvegardes")
     lk = sub.add_parser("fuites", help="liste les fuites possibles du héros")
     lk.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
     sub.add_parser("config", help="affiche l'emplacement de la configuration")
@@ -145,7 +167,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Historiques   : " + (", ".join(map(str, _history_dirs(cfg, args.history))) or "non trouvés"))
         return 0
 
-    db = Database(args.db or database_path(cfg))
+    def progress(text: str) -> None:
+        diagnostics.log.info(text)
+        if sys.stdout is not None:
+            print(text, flush=True)
+
+    db = Database(args.db or database_path(cfg), on_progress=progress)
     dirs = _history_dirs(cfg, args.history)
     try:
         if command == "diagnostic":
@@ -159,6 +186,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_import(db, dirs, cfg)
         if command == "dashboard":
             return cmd_dashboard(db, args.hero, not args.no_open)
+        if command == "analyse":
+            return cmd_analysis(db, cfg)
+        if command == "sauvegarde":
+            return cmd_backup(db)
         if command == "fuites":
             return cmd_leaks(db, args.hero)
         if command == "stats":
