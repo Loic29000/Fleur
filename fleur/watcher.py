@@ -11,10 +11,14 @@ from __future__ import annotations
 import os
 import re
 import time
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 from fleur.db import Database
 from fleur.parser import Hand, iter_hands
+
+if TYPE_CHECKING:
+    from fleur.diagnostics import Diagnostics
 
 # Délai après la dernière écriture à partir duquel la dernière main d'un
 # fichier est considérée comme complète même sans ligne vide finale.
@@ -48,9 +52,11 @@ def _is_history_file(path: Path) -> bool:
 
 
 class HistoryWatcher:
-    def __init__(self, db: Database, directories: list[Path]):
+    def __init__(self, db: Database, directories: list[Path], diagnostics: "Diagnostics | None" = None):
         self.db = db
         self.directories = [Path(d) for d in directories]
+        self.diagnostics = diagnostics
+        self._done_sizes: dict[str, int] = {}  # taille déjà entièrement lue, par fichier
 
     def files(self) -> list[Path]:
         out = []
@@ -68,11 +74,13 @@ class HistoryWatcher:
 
     def read_file(self, path: Path) -> list[Hand]:
         key = str(path)
-        offset = self.db.file_offset(key)
         try:
             stat = path.stat()
         except OSError:
             return []
+        if self._done_sizes.get(key) == stat.st_size:
+            return []  # rien de neuf : évite une requête par fichier à chaque tour
+        offset = self.db.file_offset(key)
         if stat.st_size < offset:  # fichier réécrit / tronqué
             offset = 0
         if stat.st_size == offset:
@@ -89,8 +97,14 @@ class HistoryWatcher:
         if consumed == 0:
             return []
         text = data[:consumed].decode("utf-8-sig", errors="replace")
-        inserted = self.db.add_hands(iter_hands(text))
+        on_error = self.diagnostics.parse_error if self.diagnostics else None
+        inserted = self.db.add_hands(iter_hands(text, on_error=on_error))
         self.db.set_file_offset(key, offset + consumed)
+        if offset + consumed == stat.st_size:
+            self._done_sizes[key] = stat.st_size
+        if self.diagnostics:
+            for hand in inserted:
+                self.diagnostics.check_hand(hand)
         return inserted
 
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from fleur.config import app_dir, config_path, database_path, load_config
+from fleur import diagnostics
 from fleur.db import Database
 from fleur.stats import STAT_BY_KEY, STAT_DEFS, compute_all
 from fleur.watcher import HistoryWatcher, find_history_dirs
@@ -24,7 +26,8 @@ def cmd_import(db: Database, dirs: list[Path]) -> int:
         print("Aucun dossier d'historique trouvé. Indiquez-le avec --history "
               "ou dans la config (history_dirs).")
         return 1
-    watcher = HistoryWatcher(db, dirs)
+    diag = diagnostics.get()
+    watcher = HistoryWatcher(db, dirs, diag)
     files = watcher.files()
     print(f"Import de {len(files)} fichier(s) depuis : " + ", ".join(map(str, dirs)))
     total = 0
@@ -34,6 +37,10 @@ def cmd_import(db: Database, dirs: list[Path]) -> int:
         if n:
             print(f"  [{i}/{len(files)}] {path.name} : {n} main(s)")
     print(f"{total} nouvelle(s) main(s) importée(s). Total en base : {db.hand_count()}")
+    if diag.problem_count or diag.unknown_patterns:
+        print(f"Attention : {diag.parse_errors} main(s) illisible(s), {diag.inconsistent} main(s) incohérente(s), "
+              f"{len(diag.unknown_patterns)} type(s) de ligne non reconnu(s).\n"
+              f"Détails dans {diag.dir} — `python -m fleur diagnostic` crée un rapport à m'envoyer.")
     return 0
 
 
@@ -80,10 +87,13 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--list", action="store_true", help="liste les stats disponibles")
     sub.add_parser("windows", help="liste les fenêtres ouvertes (diagnostic)")
     sub.add_parser("config", help="affiche l'emplacement de la configuration")
+    sub.add_parser("diagnostic", help="crée un rapport de diagnostic (zip) sur le bureau")
     args = parser.parse_args(argv)
 
     cfg = load_config()
     command = args.command or "hud"
+    diagnostics.setup_logging(console=command == "hud")
+    diagnostics.log.info("démarrage : commande %s", command)
     if command == "windows":
         return cmd_windows()
     if command == "config":
@@ -96,19 +106,35 @@ def main(argv: list[str] | None = None) -> int:
     db = Database(args.db or database_path(cfg))
     dirs = _history_dirs(cfg, args.history)
     try:
+        if command == "diagnostic":
+            out = diagnostics.make_report(diagnostics.default_report_dir(), {
+                "historiques": [str(d) for d in dirs],
+                "mains_en_base": db.hand_count(),
+            })
+            print(f"Rapport créé : {out}")
+            return 0
         if command == "import":
             return cmd_import(db, dirs)
         if command == "stats":
             return cmd_stats(db, args.players, args.list)
         # hud
         if not dirs:
-            print("Aucun dossier d'historique Winamax trouvé.\n"
-                  "Vérifiez que l'enregistrement des historiques est activé dans le client Winamax,\n"
-                  "puis indiquez le dossier avec --history \"C:\\...\\history\".")
+            message = ("Aucun dossier d'historique Winamax trouvé.\n"
+                       "Vérifiez que l'enregistrement des historiques est activé dans le client Winamax,\n"
+                       "puis indiquez le dossier avec --history \"C:\\...\\history\" "
+                       "ou dans history_dirs de la configuration.")
+            diagnostics.log.error(message.replace("\n", " "))
+            if sys.stdout is None:  # lancé sans console (pythonw / exe fenêtré)
+                from PySide6.QtWidgets import QApplication, QMessageBox
+                _app = QApplication.instance() or QApplication([])
+                QMessageBox.warning(None, "Fleur", message)
+            else:
+                print(message)
             return 1
         if not getattr(args, "no_import", False):
             cmd_import(db, dirs)
         from fleur.hud.overlay import run_hud
-        return run_hud(db, HistoryWatcher(db, dirs), cfg, app_dir() / "layouts.json")
+        return run_hud(db, HistoryWatcher(db, dirs, diagnostics.get()), cfg,
+                       app_dir() / "layouts.json", dirs)
     finally:
         db.close()

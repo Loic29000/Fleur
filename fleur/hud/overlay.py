@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import time
 from pathlib import Path
 
@@ -17,9 +18,12 @@ from fleur.parser import Hand
 from fleur.stats import STAT_BY_KEY, StatValue, compute_all
 from fleur.watcher import HistoryWatcher
 
+log = logging.getLogger("fleur")
+
 # Une table sans nouvelle main ni fenêtre depuis ce délai est retirée
 TABLE_TIMEOUT_S = 15 * 60
 WINDOW_GONE_GRACE_S = 10
+WINDOW_SEARCH_INTERVAL_S = 1.0
 
 
 def color_for(key: str, sv: StatValue, hands: float, cfg: dict) -> str:
@@ -152,11 +156,14 @@ class TableHud:
         self.hero_seat: int | None = None
         self.last_hand_at = time.time()
         self.window_missing_since: float | None = None
+        self.last_hand: Hand | None = None
+        self._last_search = 0.0
         self._free_origin = QPoint(60 + 40 * (len(manager.tables) % 5), 60 + 40 * (len(manager.tables) % 5))
 
     # -- données ---------------------------------------------------------
     def update(self, hand: Hand) -> None:
         self.last_hand_at = time.time()
+        self.last_hand = hand
         self.max_seats = hand.max_seats or self.max_seats
         if hand.hero:
             self.hero_seat = hand.seat_of(hand.hero)
@@ -185,8 +192,15 @@ class TableHud:
             return
         if self.hwnd and win32.is_window(self.hwnd):
             return
+        now = time.time()
+        if now - self._last_search < WINDOW_SEARCH_INTERVAL_S:
+            return
+        self._last_search = now
         info = win32.find_table_window(self.table, self.cfg.get("window_title_contains", ""))
         self.hwnd = info.hwnd if info else None
+        titles = [w.title for w in win32.list_windows()
+                  if "winamax" in w.title.lower() or self.table.lower() in w.title.lower()]
+        self.manager.diagnostics.window_search(self.table, info.title if info else None, titles)
         if self.hwnd:
             for panel in self.panels.values():
                 win32.set_owner(int(panel.winId()), self.hwnd)
@@ -201,6 +215,11 @@ class TableHud:
         return _physical_to_logical(rect.x, rect.y, rect.width, rect.height)
 
     def reposition(self, force: bool = False) -> None:
+        if self.manager.hidden:
+            for p in self.panels.values():
+                if p.isVisible():
+                    p.hide()
+            return
         if win32.IS_WINDOWS:
             if self.hwnd and not win32.is_window(self.hwnd):
                 self.hwnd = None
@@ -269,13 +288,19 @@ def _physical_to_logical(x: int, y: int, w: int, h: int) -> tuple[float, float, 
 
 
 class HudManager(QObject):
-    def __init__(self, db: Database, watcher: HistoryWatcher, cfg: dict, layouts_path: Path):
+    def __init__(self, db: Database, watcher: HistoryWatcher, cfg: dict, layouts_path: Path,
+                 diagnostics=None):
         super().__init__()
+        from fleur.diagnostics import Diagnostics
         self.db = db
         self.watcher = watcher
         self.cfg = cfg
+        self.layouts_path = layouts_path
         self.layouts = Layouts(layouts_path)
         self.tables: dict[str, TableHud] = {}
+        self.diagnostics = diagnostics or watcher.diagnostics or Diagnostics()
+        self.hidden = False
+        self.session_hands = 0
 
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.poll)
@@ -288,8 +313,8 @@ class HudManager(QObject):
     def poll(self) -> None:
         try:
             hands = self.watcher.poll()
-        except Exception as exc:  # ne jamais faire planter le HUD
-            print(f"[fleur] erreur de lecture : {exc}")
+        except Exception:  # ne jamais faire planter le HUD
+            log.exception("erreur de lecture des historiques")
             return
         latest: dict[str, Hand] = {}
         for hand in hands:
@@ -299,25 +324,61 @@ class HudManager(QObject):
             if hud is None:
                 hud = TableHud(self, table, hand.max_seats)
                 self.tables[table] = hud
-                print(f"[fleur] nouvelle table : {table}")
-            hud.update(hand)
+                log.info("nouvelle table : %s (%s-max)", table, hand.max_seats)
+            try:
+                hud.update(hand)
+            except Exception:
+                log.exception("erreur d'affichage sur la table %s", table)
         if hands:
-            print(f"[fleur] {len(hands)} nouvelle(s) main(s)")
+            self.session_hands += len(hands)
+            log.info("%d nouvelle(s) main(s)", len(hands))
         for table in [t for t, h in self.tables.items() if h.expired()]:
             self.tables.pop(table).close()
-            print(f"[fleur] table fermée : {table}")
+            log.info("table fermée : %s", table)
+
+    # -- actions du menu ----------------------------------------------------
+    def set_hidden(self, hidden: bool) -> None:
+        self.hidden = hidden
+        if not hidden:
+            self.reposition_all(force=True)
+
+    def reload_config(self, cfg: dict) -> None:
+        self.cfg.clear()
+        self.cfg.update(cfg)
+        self.refresh_all()
+        log.info("configuration rechargée")
+
+    def reset_layouts(self) -> None:
+        try:
+            self.layouts_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        self.layouts = Layouts(self.layouts_path)
+        self.reposition_all(force=True)
+        log.info("positions des panneaux réinitialisées")
+
+    def refresh_all(self) -> None:
+        for hud in self.tables.values():
+            for panel in hud.panels.values():
+                panel.close_all()
+            hud.panels.clear()
+            if hud.last_hand:
+                hud.update(hud.last_hand)
 
     def reposition_all(self, force: bool = False) -> None:
         for hud in self.tables.values():
             hud.reposition(force=force)
 
 
-def run_hud(db: Database, watcher: HistoryWatcher, cfg: dict, layouts_path: Path) -> int:
+def run_hud(db: Database, watcher: HistoryWatcher, cfg: dict, layouts_path: Path,
+            history_dirs: list[Path] | None = None) -> int:
     app = QApplication.instance() or QApplication([])
     app.setQuitOnLastWindowClosed(False)
     manager = HudManager(db, watcher, cfg, layouts_path)
-    _ = manager
-    print("[fleur] HUD lancé. Ouvrez une table Winamax ; Ctrl+C pour quitter.")
+    from fleur.hud.tray import Tray
+    tray = Tray(app, manager, history_dirs or [])
+    app._fleur_refs = (manager, tray)  # garde les objets en vie
+    log.info("HUD lancé. Ouvrez une table Winamax ; menu dans la barre des tâches, Ctrl+C pour quitter.")
     # Laisse Ctrl+C fonctionner dans la console
     import signal
     signal.signal(signal.SIGINT, lambda *_: app.quit())

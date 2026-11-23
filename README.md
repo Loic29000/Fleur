@@ -27,9 +27,36 @@ python -m fleur stats Pseudo :: toutes les stats d'un joueur
 python -m fleur stats --list :: liste des stats disponibles
 python -m fleur config       :: emplacements de la config, de la base, des historiques
 python -m fleur windows      :: titres des fenêtres ouvertes (diagnostic)
+python -m fleur diagnostic   :: crée un rapport zip sur le bureau
 ```
 
-Ou double-cliquer sur `lancer_hud.bat`.
+Ou double-cliquer sur `lancer_hud.bat` (avec console) ou
+`lancer_hud_silencieux.bat` (sans console, tout passe par l'icône).
+
+### Icône dans la barre des tâches
+
+Une fleur rose apparaît près de l'horloge. Clic droit :
+
+- état (tables suivies, mains de la session, problèmes de lecture) ;
+- **Masquer / Afficher le HUD** (ou double-clic sur l'icône) ;
+- **Recharger la configuration** après avoir modifié `config.json` ;
+- **Réinitialiser la position des panneaux** ;
+- ouvrir le dossier de configuration ou celui des historiques ;
+- **Créer un rapport de diagnostic** ;
+- quitter.
+
+### Diagnostic
+
+Fleur contrôle chaque main lue : lignes non reconnues, joueurs inconnus, et
+surtout **cohérence des gains** (la somme des gains et pertes doit égaler le
+rake, et le pot recalculé doit égaler le « Total pot » de Winamax). Tout écart
+est consigné dans `%APPDATA%\Fleur\diagnostic\` avec la main concernée, ainsi
+que les titres de fenêtres vus quand une table est introuvable. Une
+notification prévient en cas de problème.
+
+Le rapport (`fleur_diagnostic_<date>.zip`, sur le bureau) contient le journal,
+ces fichiers, la configuration et la liste des fenêtres ouvertes. Les mains
+mal lues qu'il contient incluent les pseudos de la table.
 
 Le dossier d'historiques est détecté automatiquement
 (`Documents\Winamax Poker\accounts\<pseudo>\history`). Sinon :

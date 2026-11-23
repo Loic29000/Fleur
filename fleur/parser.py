@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterator
+from typing import Callable, Iterator
 
 HEADER_RE = re.compile(r"^Winamax Poker - .*HandId: #", re.MULTILINE)
 
@@ -38,6 +38,9 @@ _SHOWS_RE = re.compile(r"^(?P<name>.+?) shows \[(?P<cards>[^\]]+)\]")
 _UNCALLED_RE = re.compile(r"^Uncalled bet \((?P<amt>[^)]+)\) returned to (?P<name>.+?)\s*$")
 _SUMMARY_WON_RE = re.compile(r"^Seat \d+: (?P<name>.+?)(?: \([^)]*\))? (?:showed \[[^\]]*\] and )?won (?P<amt>[^\s]+)")
 _CARDS_RE = re.compile(r"\[([^\]]+)\]")
+_POT_RE = re.compile(r"^Total pot (?P<pot>\S+)(?: \| (?:Rake (?P<rake>\S+)|No rake))?")
+# Sections dont les lignes non reconnues sont sans conséquence pour les stats
+_IGNORED_SECTIONS = {"summary", "showdown"}
 
 STREETS = ("preflop", "flop", "turn", "river")
 _STREET_NAMES = {
@@ -103,6 +106,9 @@ class Hand:
     collected: dict[str, float] = field(default_factory=dict)
     shown: dict[str, str] = field(default_factory=dict)
     uncalled: dict[str, float] = field(default_factory=dict)
+    total_pot: float | None = None
+    rake: float = 0.0
+    unknown_lines: list[str] = field(default_factory=list)
     raw: str = ""
 
     @property
@@ -221,6 +227,10 @@ def parse_hand(text: str) -> Hand:
             board_m = re.match(r"^Board: \[([^\]]+)\]", line)
             if board_m and not hand.board:
                 hand.board = board_m.group(1).split()
+            pot_m = _POT_RE.match(line)
+            if pot_m:
+                hand.total_pot = parse_amount(pot_m["pot"])
+                hand.rake = parse_amount(pot_m["rake"])
             continue
 
         dealt_m = _DEALT_RE.match(line)
@@ -252,6 +262,9 @@ def parse_hand(text: str) -> Hand:
             hand.actions.append(_make_action(street, action_m, known))
             continue
 
+        if section not in _IGNORED_SECTIONS:
+            hand.unknown_lines.append(line)
+
     if not hand.collected and summary_won:
         hand.collected = summary_won
     if not hand.table:
@@ -281,10 +294,12 @@ def _make_action(street: str, m: re.Match, known: list[str]) -> Action:
     return Action(street=street, player=player, kind=kind, amount=amount, to=to, allin=bool(m["allin"]))
 
 
-def iter_hands(text: str) -> Iterator[Hand]:
-    """Parse toutes les mains d'un texte, en ignorant celles illisibles."""
+def iter_hands(text: str, on_error: Callable[[str, Exception], None] | None = None) -> Iterator[Hand]:
+    """Parse toutes les mains d'un texte. Les mains illisibles sont ignorées
+    et signalées à `on_error(texte, erreur)`."""
     for chunk in split_hands(text):
         try:
             yield parse_hand(chunk)
-        except ParseError:
-            continue
+        except Exception as exc:  # une main corrompue ne doit rien bloquer
+            if on_error:
+                on_error(chunk, exc)
