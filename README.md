@@ -84,6 +84,30 @@ vaut `true` dans la configuration.
 
 ### Analyse après coup
 
+**Application d'analyse** (menu de l'icône → « Analyse : revue de mains, ranges,
+sessions… », ou `python -m fleur analyse`) : un petit serveur local
+(`127.0.0.1`, jeton aléatoire par session) ouvre dans le navigateur :
+
+- **Revue de mains** : liste filtrable (position, gagnées/perdues, abattage, taille
+  du pot, limite, main de départ, tri par gros pots ou grosses pertes) et rejoueur
+  street par street (flèches ← →), export en texte (brut ou anonymisé) et en image.
+- **Ranges** : grille 13×13 des mains de départ, colorée selon les BB/100, la
+  fréquence jouée ou relancée, par position et par limite.
+- **All-in EV** : courbe de gains réels et à la régulière (équité au moment du
+  tapis quand toutes les cartes sont montrées avant la river).
+- **Sessions** : durée, mains par heure, résultats par table, par heure de la
+  journée et par jour.
+- **Stats perso** : éditeur de stats par formules sur les compteurs
+  (`+ - * /`, parenthèses), testables sur ses propres mains, enregistrées dans
+  `custom_stats` et utilisables dans `hud_lines` et `popup_stats`.
+- **Équité** : calculateur pour réviser des mains, **refusé tant qu'une table
+  Winamax est ouverte**.
+- **Outils** : sauvegarde de la base dans `Documents\Fleur\sauvegardes` (aussi
+  dans le menu de l'icône et avec `python -m fleur sauvegarde`).
+
+Le popup du HUD montre aussi les stats par street (mise, fold et relance face à une
+mise au flop, turn et river), le fold selon la taille de mise et la part d'overbets.
+
 - `python -m fleur dashboard` (ou menu de l'icône → « Tableau de bord du héros ») :
   page HTML locale avec la courbe de gains en € et en big blinds (avec et sans
   abattage), BB/100 par position, par limite et par format, résultats par session
