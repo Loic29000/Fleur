@@ -1,0 +1,101 @@
+Winamax Poker - CashGame - HandId: #18334871-1001-1700000001 - Holdem no limit (0.01€/0.02€) - 2026/11/20 20:30:45 UTC
+Table: 'Nice 05' 6-max (real money) Seat #3 is the button
+Seat 1: Alice (2.00€)
+Seat 2: Bob (1.85€)
+Seat 3: Charlie (2.10€)
+Seat 4: Dave (2.00€)
+Seat 5: Eve (3.00€)
+Seat 6: Hero (2.00€)
+*** ANTE/BLINDS ***
+Dave posts small blind 0.01€
+Eve posts big blind 0.02€
+Dealt to Hero [7h 2d]
+*** PRE-FLOP *** 
+Hero folds
+Alice folds
+Bob raises 0.04€ to 0.06€
+Charlie calls 0.06€
+Dave folds
+Eve folds
+*** FLOP *** [7c 8d 2s]
+Bob bets 0.08€
+Charlie calls 0.08€
+*** TURN *** [7c 8d 2s][Jh]
+Bob checks
+Charlie bets 0.15€
+Bob folds
+Charlie collected 0.30€ from pot
+*** SUMMARY ***
+Total pot 0.31€ | Rake 0.01€
+Board: [7c 8d 2s Jh]
+Seat 3: Charlie (button) won 0.30€
+
+
+Winamax Poker - CashGame - HandId: #18334871-1002-1700000060 - Holdem no limit (0.01€/0.02€) - 2026/11/20 20:31:40 UTC
+Table: 'Nice 05' 6-max (real money) Seat #4 is the button
+Seat 1: Alice (1.99€)
+Seat 2: Bob (1.71€)
+Seat 3: Charlie (2.26€)
+Seat 4: Dave (1.99€)
+Seat 5: Eve (2.98€)
+Seat 6: Hero (2.00€)
+*** ANTE/BLINDS ***
+Eve posts small blind 0.01€
+Hero posts big blind 0.02€
+Dealt to Hero [Qs 9s]
+*** PRE-FLOP *** 
+Alice raises 0.04€ to 0.06€
+Bob folds
+Charlie raises 0.12€ to 0.18€
+Dave folds
+Eve folds
+Hero folds
+Alice folds
+Charlie collected 0.15€ from pot
+*** SUMMARY ***
+Total pot 0.15€ | No rake
+Seat 3: Charlie won 0.15€
+
+
+Winamax Poker - CashGame - HandId: #18334871-1003-1700000120 - Holdem no limit (0.01€/0.02€) - 2026/11/20 20:32:30 UTC
+Table: 'Nice 05' 6-max (real money) Seat #5 is the button
+Seat 1: Alice (1.93€)
+Seat 2: Bob (1.71€)
+Seat 3: Charlie (2.35€)
+Seat 4: Dave (2.00€)
+Seat 5: Eve (3.00€)
+Seat 6: Hero (1.98€)
+*** ANTE/BLINDS ***
+Hero posts small blind 0.01€
+Alice posts big blind 0.02€
+Dealt to Hero [8c 3h]
+*** PRE-FLOP *** 
+Bob calls 0.02€
+Charlie raises 0.06€ to 0.08€
+Dave calls 0.08€
+Eve raises 0.28€ to 0.36€
+Hero folds
+Alice folds
+Bob folds
+Charlie folds
+Dave calls 0.28€
+*** FLOP *** [Ah 9c 4d]
+Dave checks
+Eve bets 0.40€
+Dave raises 0.80€ to 1.20€
+Eve calls 0.80€
+*** TURN *** [Ah 9c 4d][2c]
+Dave bets 0.44€ and is all-in
+Eve calls 0.44€
+*** RIVER *** [Ah 9c 4d 2c][Ks]
+*** SHOW DOWN ***
+Dave shows [9d 9h] (Three of a kind : 9's)
+Eve shows [Ad Kd] (Two pairs : Aces and Kings)
+Dave collected 3.93€ from pot
+*** SUMMARY ***
+Total pot 4.13€ | Rake 0.20€
+Board: [Ah 9c 4d 2c Ks]
+Seat 4: Dave showed [9d 9h] and won 3.93€ with Three of a kind : 9's
+Seat 5: Eve (button) showed [Ad Kd] and lost with Two pairs : Aces and Kings
+
+
