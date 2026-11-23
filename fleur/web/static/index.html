@@ -7,6 +7,9 @@
 <style>
 :root { --bg:#121417; --panel:#1b1e23; --panel2:#22262c; --line:#2d323a; --text:#e8e8e8; --muted:#9aa5b1;
   --pos:#7ddc6f; --neg:#ff6b6b; --acc:#ff6fa8; --blue:#4fa3ff; --yel:#ffd84a; --felt:#1f5a46; }
+:root[data-theme="clair"] { --bg:#f3f4f6; --panel:#ffffff; --panel2:#eceef1; --line:#d9dce1; --text:#1d2127;
+  --muted:#5f6b78; --pos:#2e8b3e; --neg:#d03030; --acc:#d6407e; --blue:#1f6fd1; --yel:#a87b00; --felt:#2f7a5f; }
+:root[data-theme="clair"] .chart text { fill:#5f6b78; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 "Segoe UI", system-ui, sans-serif; }
 header { display:flex; align-items:center; gap:16px; padding:10px 18px; border-bottom:1px solid var(--line);
@@ -67,6 +70,10 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
 .eqbar i { display:block; height:100%; background:var(--pos); }
 .chip { display:inline-block; font-size:11px; padding:1px 7px; border-radius:20px; background:var(--panel2); border:1px solid var(--line); margin:0 3px 2px 0; }
 .chip.on, button.chip.on { background:var(--acc); color:#111; border-color:var(--acc); }
+.chip a { color:var(--muted); text-decoration:none; font-weight:700; font-size:14px; padding:0 3px; }
+.chip a:hover { color:var(--acc); }
+#st-lines .chip { font-size:13px; padding:3px 8px; }
+#st-popup label { display:flex; width:100%; break-inside:avoid; margin-bottom:4px; }
 button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); padding:3px 10px; }
 </style>
 </head>
@@ -83,6 +90,7 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
     <button data-tab="adversaires">Adversaires</button>
     <button data-tab="stats">Stats perso</button>
     <button data-tab="equite">Équité</button>
+    <button data-tab="reglages">Réglages</button>
     <button data-tab="outils">Outils</button>
   </nav>
   <div id="who"></div>
@@ -281,6 +289,42 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
       <button class="b" id="eq-add">+ Joueur</button><button class="b p" id="eq-go">Calculer</button></div>
     <div id="eq-out"></div>
   </section>
+</div>
+
+<!-- ======================= Réglages ======================= -->
+<div class="tab" id="tab-reglages">
+  <section>
+    <h2>Lignes du panneau du HUD</h2>
+    <p class="note">Chaque ligne affiche ses stats séparées par « / ». Ajoute une stat avec la liste, retire-la avec ×,
+      déplace-la avec ← →. Les changements s'appliquent au HUD en 2 secondes, sans redémarrer.</p>
+    <div id="st-lines"></div>
+    <div class="ctrl"><button class="b" id="st-addline">+ Ligne</button></div>
+  </section>
+  <div class="row">
+    <section class="grow"><h2>Stats du popup (double-clic sur un panneau)</h2>
+      <div class="ctrl"><button class="b" id="st-all">Tout cocher</button><button class="b" id="st-none">Tout décocher</button></div>
+      <div id="st-popup" style="columns:2 220px"></div></section>
+    <section class="grow"><h2>Apparence et seuils</h2>
+      <div class="filters" style="flex-direction:column;align-items:stretch">
+        <label>Thème du HUD <select id="st-hud_theme"><option value="sombre">Sombre</option><option value="clair">Clair</option></select></label>
+        <label>Thème de cette application <select id="st-ui_theme"><option value="sombre">Sombre</option><option value="clair">Clair</option></select></label>
+        <label>Taille de police du HUD <input id="st-font_size" type="number" min="6" max="20"></label>
+        <label>Opacité des panneaux <input id="st-opacity" type="range" min="0.3" max="1" step="0.05"></label>
+        <label>Couleurs à partir de (mains) <input id="st-min_hands_for_colors" type="number" min="0"></label>
+        <label>Badge de profil à partir de (mains) <input id="st-profile_min_hands" type="number" min="0"></label>
+        <label>Mains montrées dans le popup <input id="st-shown_hands_count" type="number" min="0" max="30"></label>
+        <label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" id="st-show_hero"> Panneau sur mon siège</label>
+        <label style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" id="st-show_profile"> Badge de profil automatique</label>
+      </div></section>
+  </div>
+  <section><h2>Couleurs des stats</h2>
+    <p class="note">Pour chaque stat : la valeur prend la couleur de la première ligne dont le seuil est supérieur à elle ;
+      la dernière couleur s'applique au-delà. Exemple VPIP : &lt; 15 bleu, &lt; 25 vert, &lt; 35 jaune, sinon rouge.</p>
+    <div class="filters"><label>Stat <select id="st-color-stat"></select></label></div>
+    <table><tbody id="st-colors"></tbody></table>
+    <div class="ctrl"><button class="b" id="st-color-add">+ Seuil</button><button class="b" id="st-color-clear">Pas de couleur pour cette stat</button></div>
+  </section>
+  <div class="ctrl"><button class="b p" id="st-save">Enregistrer les réglages</button><span id="st-msg" class="note"></span></div>
 </div>
 
 <!-- ======================= Outils ======================= -->
@@ -718,7 +762,74 @@ async function openPlayer(name) {
 }
 $("#op-go").onclick = loadOpponents; $("#op-q").oninput = drawOpponents;
 
-const LOADERS = {bord: loadDashboard, adversaires: loadOpponents, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
+// ---------------- réglages ----------------
+let SET = null, STATS_LIST = [];
+const statLabel = k => (STATS_LIST.find(s => s.key === k) || {label: k}).label;
+async function loadSettings() {
+  const d = await api("settings"); SET = d.settings; STATS_LIST = d.stats;
+  for (const k of ["hud_theme", "ui_theme", "font_size", "opacity", "min_hands_for_colors", "profile_min_hands", "shown_hands_count"]) $("#st-" + k).value = SET[k];
+  $("#st-show_hero").checked = !!SET.show_hero; $("#st-show_profile").checked = SET.show_profile !== false;
+  drawLines(); drawPopupStats();
+  $("#st-color-stat").innerHTML = STATS_LIST.filter(s => s.kind !== "count" && s.kind !== "money")
+    .map(s => `<option value="${s.key}">${esc(s.label)} — ${esc(s.description)}${SET.colors[s.key] ? " ●" : ""}</option>`).join("");
+  drawColors();
+}
+function drawLines() {
+  const opts = STATS_LIST.map(s => `<option value="${s.key}">${esc(s.label)} — ${esc(s.description)}</option>`).join("");
+  $("#st-lines").innerHTML = SET.hud_lines.map((line, li) => `<div class="card" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <b style="width:60px">Ligne ${li + 1}</b>
+    ${line.map((k, i) => `<span class="chip">${i ? `<a href="#" data-mv="${li},${i},-1">←</a> ` : ""}${esc(statLabel(k))}
+      ${i < line.length - 1 ? ` <a href="#" data-mv="${li},${i},1">→</a>` : ""} <a href="#" data-rm="${li},${i}">×</a></span>`).join("")}
+    <select data-add="${li}"><option value="">+ ajouter…</option>${opts}</select>
+    <button class="b" data-dl="${li}">Supprimer la ligne</button></div>`).join("");
+  document.querySelectorAll("[data-add]").forEach(sel => sel.onchange = () => { if (!sel.value) return;
+    SET.hud_lines[+sel.dataset.add].push(sel.value); drawLines(); });
+  document.querySelectorAll("[data-rm]").forEach(a => a.onclick = e => { e.preventDefault(); const [l, i] = a.dataset.rm.split(",").map(Number);
+    SET.hud_lines[l].splice(i, 1); drawLines(); });
+  document.querySelectorAll("[data-mv]").forEach(a => a.onclick = e => { e.preventDefault(); const [l, i, d] = a.dataset.mv.split(",").map(Number);
+    const line = SET.hud_lines[l]; [line[i], line[i + d]] = [line[i + d], line[i]]; drawLines(); });
+  document.querySelectorAll("[data-dl]").forEach(b => b.onclick = () => { SET.hud_lines.splice(+b.dataset.dl, 1); drawLines(); });
+}
+$("#st-addline").onclick = () => { SET.hud_lines.push([]); drawLines(); };
+function drawPopupStats() {
+  $("#st-popup").innerHTML = STATS_LIST.map(s => `<label style="flex-direction:row;gap:6px;align-items:center;color:var(--text)">
+    <input type="checkbox" value="${s.key}" ${SET.popup_stats.includes(s.key) ? "checked" : ""}> ${esc(s.label)}
+    <span class="muted" style="font-size:11px">${esc(s.description)}</span></label>`).join("");
+}
+$("#st-all").onclick = () => document.querySelectorAll("#st-popup input").forEach(c => c.checked = true);
+$("#st-none").onclick = () => document.querySelectorAll("#st-popup input").forEach(c => c.checked = false);
+function drawColors() {
+  const k = $("#st-color-stat").value, rules = SET.colors[k] || [];
+  $("#st-colors").innerHTML = rules.map((r, i) => `<tr><td>${i < rules.length - 1 ? "si la valeur est inférieure à" : "au-delà (dernière couleur)"}</td>
+    <td>${i < rules.length - 1 ? `<input type="number" step="0.1" value="${r[0]}" data-th="${i}" style="width:90px">` : ""}</td>
+    <td><input type="color" value="${r[1]}" data-co="${i}"></td><td><button class="b" data-cr="${i}">×</button></td></tr>`).join("")
+    || `<tr><td class="muted">Pas de couleur pour cette stat (affichée en neutre).</td></tr>`;
+  document.querySelectorAll("[data-th]").forEach(inp => inp.onchange = () => { SET.colors[k][+inp.dataset.th][0] = +inp.value; });
+  document.querySelectorAll("[data-co]").forEach(inp => inp.oninput = () => { SET.colors[k][+inp.dataset.co][1] = inp.value; });
+  document.querySelectorAll("[data-cr]").forEach(b => b.onclick = () => { SET.colors[k].splice(+b.dataset.cr, 1);
+    if (!SET.colors[k].length) delete SET.colors[k]; drawColors(); });
+}
+$("#st-color-stat").onchange = drawColors;
+$("#st-color-add").onclick = () => { const k = $("#st-color-stat").value, rules = SET.colors[k] || (SET.colors[k] = []);
+  const last = rules.length ? rules[rules.length - 1] : null;
+  // nouveau seuil inséré avant la couleur « au-delà »
+  rules.splice(Math.max(rules.length - 1, 0), 0, [last ? Math.max(1, (rules.length > 1 ? rules[rules.length - 2][0] : 0) + 10) : 10, "#7ddc6f"]);
+  if (rules.length === 1) rules.push([999, "#ff6b6b"]);
+  drawColors(); };
+$("#st-color-clear").onclick = () => { delete SET.colors[$("#st-color-stat").value]; drawColors(); };
+$("#st-save").onclick = async () => {
+  // la dernière règle sert de « au-delà » : seuil très haut
+  for (const rules of Object.values(SET.colors)) if (rules.length) rules[rules.length - 1][0] = 999999;
+  const body = {hud_lines: SET.hud_lines.filter(l => l.length), colors: SET.colors,
+    popup_stats: [...document.querySelectorAll("#st-popup input:checked")].map(c => c.value),
+    show_hero: $("#st-show_hero").checked, show_profile: $("#st-show_profile").checked};
+  for (const k of ["hud_theme", "ui_theme", "font_size", "opacity", "min_hands_for_colors", "profile_min_hands", "shown_hands_count"]) body[k] = $("#st-" + k).value;
+  try { await api("settings", {}, body); $("#st-msg").textContent = "Enregistré : le HUD se met à jour dans 2 secondes.";
+    applyTheme(body.ui_theme); } catch (e) { $("#st-msg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+function applyTheme(t) { document.documentElement.dataset.theme = t === "clair" ? "clair" : "sombre"; }
+
+const LOADERS = {bord: loadDashboard, reglages: loadSettings, adversaires: loadOpponents, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
   equite: () => {}, outils: loadBackups};
 
 // ---------------- mise à jour automatique ----------------
@@ -741,6 +852,7 @@ async function checkUpdates() {
 (async () => {
   try {
     META = await api("meta");
+    applyTheme(META.ui_theme);
     $("#who").textContent = `${META.hero || "?"} · ${META.hands} mains en base`;
     for (const sel of ["#f-pos", "#g-pos"]) META.positions.forEach(p => $(sel).insertAdjacentHTML("beforeend", `<option>${p}</option>`));
     for (const sel of ["#f-bb", "#g-bb"]) META.stakes.forEach(b => $(sel).insertAdjacentHTML("beforeend", `<option value="${b}">bb ${b} €</option>`));

@@ -9,11 +9,21 @@ import sys
 from fleur.cli import main
 
 SUB_OPTIONS = ("--sans-import", "--navigateur")
+SUB_WITH_VALUE = ("--onglet",)
 
 
 def build_argv(argv: list[str]) -> list[str]:
-    sub = [a for a in argv if a in SUB_OPTIONS]
-    rest = [a for a in argv if a not in SUB_OPTIONS and a != "analyse"]
+    sub, rest, i = [], [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in SUB_OPTIONS:
+            sub.append(a)
+        elif a in SUB_WITH_VALUE and i + 1 < len(argv):
+            sub += [a, argv[i + 1]]
+            i += 1
+        elif a != "analyse":
+            rest.append(a)
+        i += 1
     return rest + ["analyse"] + sub
 
 

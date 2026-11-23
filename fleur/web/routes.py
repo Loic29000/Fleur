@@ -96,6 +96,55 @@ def _dashboard(app: AnalysisApp, hero: str) -> dict:
     }
 
 
+SETTINGS_KEYS = ("hud_lines", "popup_stats", "colors", "font_size", "opacity", "hud_theme", "ui_theme",
+                 "show_hero", "show_profile", "min_hands_for_colors", "profile_min_hands", "shown_hands_count")
+
+
+def validate_settings(body: dict) -> dict:
+    """Vérifie les réglages envoyés par la page avant de les écrire dans la config."""
+    from fleur.stats import STAT_BY_KEY
+    out = {}
+    for key, value in body.items():
+        if key not in SETTINGS_KEYS:
+            raise ValueError(f"réglage inconnu : {key}")
+        if key == "hud_lines":
+            if not isinstance(value, list) or not 1 <= len(value) <= 6:
+                raise ValueError("de 1 à 6 lignes de panneau")
+            lines = [[k for k in line if k in STAT_BY_KEY][:8] for line in value if isinstance(line, list)]
+            value = [line for line in lines if line] or [["vpip", "pfr", "hands"]]
+        elif key == "popup_stats":
+            value = [k for k in value if k in STAT_BY_KEY][:60]
+        elif key == "colors":
+            clean = {}
+            for stat, rules in (value or {}).items():
+                if stat not in STAT_BY_KEY or not isinstance(rules, list):
+                    continue
+                good = []
+                for rule in rules:
+                    try:
+                        threshold, color = float(rule[0]), str(rule[1])
+                    except (TypeError, ValueError, IndexError):
+                        continue
+                    if len(color) == 7 and color.startswith("#"):
+                        good.append([threshold, color])
+                if good:
+                    clean[stat] = sorted(good, key=lambda r: r[0])
+            value = clean
+        elif key == "font_size":
+            value = max(6, min(20, int(value)))
+        elif key == "opacity":
+            value = max(0.3, min(1.0, float(value)))
+        elif key in ("hud_theme", "ui_theme"):
+            if value not in ("sombre", "clair"):
+                raise ValueError("thème : sombre ou clair")
+        elif key in ("show_hero", "show_profile"):
+            value = bool(value)
+        else:  # nombres entiers
+            value = max(0, min(10000, int(value)))
+        out[key] = value
+    return out
+
+
 def install(app: AnalysisApp) -> None:
     if app.routes:
         return
@@ -112,6 +161,7 @@ def install(app: AnalysisApp) -> None:
                 "SELECT 1 FROM player_hands WHERE player = ? AND position = ? LIMIT 1", (hero, p)).fetchone()],
             "table_open": bool(app.table_open()),
             "last_hand": db.conn.execute("SELECT MAX(played_at) FROM hands").fetchone()[0],
+            "ui_theme": app.cfg.get("ui_theme", "sombre"),
         }
 
     @app.route("GET /api/dashboard")
@@ -223,6 +273,28 @@ def install(app: AnalysisApp) -> None:
             note.note = (body.get("note") or "").strip()[:2000]
         app.db().save_note(note)
         return "json", {"ok": True}
+
+    @app.route("GET /api/settings")
+    def get_settings(app, _id, query, _body):
+        from fleur.config import load_config
+        from fleur.stats import STAT_DEFS
+        cfg = load_config()
+        return "json", {"settings": {k: cfg.get(k) for k in SETTINGS_KEYS},
+                        "stats": [{"key": s.key, "label": s.label, "description": s.description, "kind": s.kind}
+                                  for s in STAT_DEFS]}
+
+    @app.route("POST /api/settings")
+    def post_settings(app, _id, query, body):
+        from fleur.config import load_config, save_config
+        try:
+            changes = validate_settings(body or {})
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+        cfg = load_config()
+        cfg.update(changes)
+        save_config(cfg)
+        app.cfg.update(changes)
+        return "json", {"saved": sorted(changes)}
 
     @app.route("GET /api/ranges")
     def ranges(app, _id, query, _body):

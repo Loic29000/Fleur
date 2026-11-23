@@ -33,7 +33,7 @@ def downloads_dir() -> Path:
 
 
 class AnalysisWindow(QMainWindow):
-    def __init__(self, server: AnalysisServer):
+    def __init__(self, server: AnalysisServer, tab: str = ""):
         super().__init__()
         from fleur.hud.tray import flower_icon
         self.server = server
@@ -45,7 +45,7 @@ class AnalysisWindow(QMainWindow):
         self.setStatusBar(QStatusBar(self))
         profile = self.view.page().profile()
         profile.downloadRequested.connect(self._download)
-        self.view.setUrl(QUrl(server.url))
+        self.view.setUrl(QUrl(server.url + (f"#{tab}" if tab else "")))
 
     def _download(self, request: "QWebEngineDownloadRequest") -> None:
         """Exports (texte, image) enregistrés dans le dossier Téléchargements."""
@@ -84,19 +84,19 @@ class _Importer(threading.Thread):
         db.close()
 
 
-def open_window(server: AnalysisServer) -> "AnalysisWindow | None":
+def open_window(server: AnalysisServer, tab: str = "") -> "AnalysisWindow | None":
     """Ouvre la fenêtre (ou le navigateur si Qt WebEngine manque)."""
     if not HAS_WEBENGINE:
-        server.open()
+        server.open(tab)
         return None
-    window = AnalysisWindow(server)
+    window = AnalysisWindow(server, tab)
     window.show()
     window.raise_()
     window.activateWindow()
     return window
 
 
-def run_analysis_app(db_path: str, cfg: dict, history_dirs: list[Path], table_open=None) -> int:
+def run_analysis_app(db_path: str, cfg: dict, history_dirs: list[Path], table_open=None, tab: str = "") -> int:
     """Application autonome : serveur local + fenêtre + import continu des mains."""
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Fleur analyse")
@@ -105,7 +105,7 @@ def run_analysis_app(db_path: str, cfg: dict, history_dirs: list[Path], table_op
     if history_dirs:
         importer = _Importer(str(db_path), history_dirs, cfg)
         importer.start()
-    window = open_window(server)
+    window = open_window(server, tab)
     if window is None:  # navigateur : on garde le serveur jusqu'à Ctrl+C
         try:
             while True:

@@ -99,20 +99,21 @@ def cmd_leaks(db: Database, hero: str | None) -> int:
     return 0
 
 
-def cmd_analysis(db: Database, cfg: dict, dirs: list[Path], browser: bool = False, no_import: bool = False) -> int:
+def cmd_analysis(db: Database, cfg: dict, dirs: list[Path], browser: bool = False, no_import: bool = False,
+                 tab: str = "") -> int:
     from fleur.hud import win32
     if not browser:
         # Fenêtre Windows dédiée, qui importe aussi les nouvelles mains
         from fleur.gui.analysis_window import run_analysis_app
         path = db.path
         db.close()
-        return run_analysis_app(path, cfg, [] if no_import else dirs, table_open=win32.winamax_table_open)
+        return run_analysis_app(path, cfg, [] if no_import else dirs, table_open=win32.winamax_table_open, tab=tab)
     from fleur.web.server import AnalysisServer
     server = AnalysisServer(db.path, cfg, table_open=win32.winamax_table_open).start()
     if sys.stdout is not None:
         print(f"Application d'analyse : {server.url}")
         print("Ctrl+C pour arrêter.")
-    server.open()
+    server.open(tab)
     try:
         server.thread.join()
     except KeyboardInterrupt:
@@ -156,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("analyse", help="application d'analyse : tableau de bord, revue de mains, ranges...")
     an.add_argument("--navigateur", action="store_true", help="ouvrir dans le navigateur au lieu d'une fenêtre")
     an.add_argument("--sans-import", action="store_true", help="ne pas importer les mains (le HUD s'en charge)")
+    an.add_argument("--onglet", default="", help="onglet à ouvrir (bord, mains, reglages...)")
     sub.add_parser("sauvegarde", help=r"sauvegarde la base dans Documents\Fleur\sauvegardes")
     lk = sub.add_parser("fuites", help="liste les fuites possibles du héros")
     lk.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
@@ -219,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         if command == "dashboard":
             return cmd_dashboard(db, args.hero, not args.no_open)
         if command == "analyse":
-            return cmd_analysis(db, cfg, dirs, args.navigateur, args.sans_import)
+            return cmd_analysis(db, cfg, dirs, args.navigateur, args.sans_import, args.onglet)
         if command == "sauvegarde":
             return cmd_backup(db)
         if command == "fuites":

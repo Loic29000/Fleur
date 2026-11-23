@@ -118,6 +118,9 @@ DEFAULT_CONFIG: dict = {
     # Nombre minimum de mains avant de colorer les stats
     "min_hands_for_colors": 10,
     "font_size": 9,
+    # Apparence : "sombre" ou "clair" pour les panneaux du HUD et l'application d'analyse
+    "hud_theme": "sombre",
+    "ui_theme": "sombre",
     "opacity": 0.85,
     "poll_interval_ms": 1000,
     # Texte à chercher dans le titre de la fenêtre en plus du nom de la table

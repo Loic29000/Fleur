@@ -70,6 +70,8 @@ class Tray:
         self.toggle.triggered.connect(self.toggle_hidden)
         self.menu.addAction(self.toggle)
         self._add("Recharger la configuration", self.reload_config)
+        self._add("Réglages du HUD (stats, couleurs, apparence)…", self.open_settings)
+        self._build_appearance_menu()
         self._add("Réinitialiser la position des panneaux", self.manager.reset_layouts)
         self._build_filter_menu()
         self.menu.addSeparator()
@@ -104,6 +106,43 @@ class Tray:
         self.backup_timer.timeout.connect(self.auto_backup)
         self.backup_timer.start(3600 * 1000)
         QTimer.singleShot(60 * 1000, self.auto_backup)  # laisse le HUD démarrer d'abord
+
+    def _build_appearance_menu(self) -> None:
+        sub = self.menu.addMenu("Apparence")
+        for label, changes in (
+            ("Thème sombre", {"hud_theme": "sombre", "ui_theme": "sombre"}),
+            ("Thème clair", {"hud_theme": "clair", "ui_theme": "clair"}),
+        ):
+            act = QAction(label, sub)
+            act.triggered.connect(lambda _=False, c=changes: self.set_options(c))
+            sub.addAction(act)
+        sub.addSeparator()
+        for label, delta in (("Police plus grande", 1), ("Police plus petite", -1)):
+            act = QAction(label, sub)
+            act.triggered.connect(lambda _=False, d=delta: self.set_options(
+                {"font_size": max(6, min(20, int(self.manager.cfg.get("font_size", 9)) + d))}))
+            sub.addAction(act)
+        sub.addSeparator()
+        for opacity in (0.6, 0.75, 0.85, 1.0):
+            act = QAction(f"Opacité {int(opacity * 100)} %", sub)
+            act.triggered.connect(lambda _=False, o=opacity: self.set_options({"opacity": o}))
+            sub.addAction(act)
+
+    def set_options(self, changes: dict) -> None:
+        """Modifie des réglages, les enregistre et redessine les panneaux."""
+        cfg = load_config()
+        cfg.update(changes)
+        try:
+            save_config(cfg)
+        except OSError as exc:
+            log.warning("config non enregistrée : %s", exc)
+        self.manager.cfg.update(changes)
+        self.manager._config_mtime = self.manager._read_config_mtime()
+        self.manager.refresh_all()
+        log.info("réglages modifiés : %s", changes)
+
+    def open_settings(self) -> None:
+        self.open_analysis(tab="reglages")
 
     def _build_filter_menu(self) -> None:
         sub = self.menu.addMenu("Filtre des stats")
@@ -199,14 +238,15 @@ class Tray:
         self._sync_filter_menu()
         self.notify("Fleur", "Configuration rechargée.")
 
-    def open_analysis(self) -> None:
+    def open_analysis(self, tab: str = "") -> None:
         """Ouvre l'application d'analyse : FleurAnalyse.exe s'il est installé à côté,
         sinon une fenêtre (ou le navigateur) servie par ce programme."""
         exe = Path(sys.executable).parent / "FleurAnalyse" / "FleurAnalyse.exe"
         if getattr(sys, "frozen", False) and exe.is_file():
             try:
                 # le HUD importe déjà les mains : l'analyse n'a pas besoin de le faire
-                subprocess.Popen([str(exe), "--sans-import"], cwd=str(exe.parent))
+                subprocess.Popen([str(exe), "--sans-import"] + (["--onglet", tab] if tab else []),
+                                 cwd=str(exe.parent))
                 return
             except OSError as exc:
                 log.warning("FleurAnalyse.exe impossible à lancer : %s", exc)
@@ -223,7 +263,7 @@ class Tray:
                 self._analysis_window.raise_()
                 self._analysis_window.activateWindow()
             else:
-                self._analysis_window = open_window(self._analysis)
+                self._analysis_window = open_window(self._analysis, tab)
         except Exception as exc:
             log.exception("application d'analyse impossible")
             self.notify("Fleur", f"Analyse impossible : {exc}", warning=True)

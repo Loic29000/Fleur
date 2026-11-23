@@ -34,14 +34,31 @@ def stats_filter_args(cfg: dict, hand: Hand) -> dict:
             "seats_mode": filt.get("seats", "all"), "stakes_mode": filt.get("stakes", "all")}
 
 
+# Thème clair : couleurs plus foncées pour rester lisibles sur fond clair
+_LIGHT = {"#4fa3ff": "#1f6fd1", "#7ddc6f": "#2e8b3e", "#ffd84a": "#a87b00", "#ff6b6b": "#d03030",
+          "#e8e8e8": "#222222", "#bbbbbb": "#555555", "#777": "#999", "#888": "#777"}
+
+
+def theme_color(color: str, cfg: dict) -> str:
+    if cfg.get("hud_theme") == "clair":
+        return _LIGHT.get(color.lower(), color)
+    return color
+
+
+def panel_style(cfg: dict) -> str:
+    if cfg.get("hud_theme") == "clair":
+        return "background:#f4f4f4; border:1px solid #bbb;"
+    return "background:#151515; border:1px solid #333;"
+
+
 def color_for(key: str, sv: StatValue, hands: float, cfg: dict) -> str:
     rules = cfg.get("colors", {}).get(key)
     if not rules or sv.value is None or hands < cfg.get("min_hands_for_colors", 0):
-        return "#e8e8e8"
+        return theme_color("#e8e8e8", cfg)
     for threshold, color in rules:
         if sv.value < threshold:
-            return color
-    return rules[-1][1]
+            return theme_color(color, cfg)
+    return theme_color(rules[-1][1], cfg)
 
 
 def render_badge(note: PlayerNote | None) -> str:
@@ -72,7 +89,7 @@ def render_lines(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
     rows = [render_profile(totals, cfg) + render_badge(note)
-            + f"<span style='color:#bbbbbb'>{html.escape(player[:16])}</span>"]
+            + f"<span style='color:{theme_color('#bbbbbb', cfg)}'>{html.escape(player[:16])}</span>"]
     for line in cfg["hud_lines"]:
         parts = []
         for key in line:
@@ -279,7 +296,7 @@ class HudPanel(QWidget):
 
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(cfg.get("opacity", 0.85))
-        self.setStyleSheet("background:#151515; border:1px solid #333;")
+        self.setStyleSheet(panel_style(cfg))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(3, 1, 3, 1)
         self.label = QLabel(self)
@@ -563,6 +580,30 @@ class HudManager(QObject):
         self.follow_timer = QTimer(self)
         self.follow_timer.timeout.connect(self.reposition_all)
         self.follow_timer.start(150)
+
+        # Réglages modifiés ailleurs (application d'analyse, éditeur) : rechargement automatique
+        self._config_mtime = self._read_config_mtime()
+        self.config_timer = QTimer(self)
+        self.config_timer.timeout.connect(self.check_config_file)
+        self.config_timer.start(2000)
+
+    @staticmethod
+    def _read_config_mtime() -> float:
+        from fleur.config import config_path
+        try:
+            return config_path().stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def check_config_file(self) -> None:
+        mtime = self._read_config_mtime()
+        if mtime and mtime != self._config_mtime:
+            self._config_mtime = mtime
+            from fleur.config import load_config
+            try:
+                self.reload_config(load_config())
+            except Exception:
+                log.exception("rechargement de la configuration impossible")
 
     def poll(self) -> None:
         try:
