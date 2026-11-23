@@ -33,3 +33,20 @@ def test_fit_table_keeps_winamax_proportions():
     x, y, w, h = fit_table(10, 20, 800, 1000, 1.327)
     assert (x, w) == (10, 800) and abs(h - 800 / 1.327) < 1 and y > 20
     assert fit_table(0, 0, 1789, 1027, 0) == (0, 0, 1789, 1027)
+
+
+def test_popup_always_fits_on_screen():
+    from fleur.hud.overlay import fit_popup
+    screen = (0, 0, 1366, 1040)  # zone utile de l'écran (barre des tâches exclue)
+    # panneau en bas de l'écran (cas de la capture) : le popup passe au-dessus
+    x, y, w, h = fit_popup((765, 770, 140, 60), (300, 500), screen)
+    assert (w, h) == (300, 500) and y == 770 - 500 - 2
+    # place suffisante en dessous : le popup reste sous le panneau
+    x, y, w, h = fit_popup((765, 100, 140, 60), (300, 600), screen)
+    assert y == 162 and y + h <= 1040
+    # trop haut pour l'écran : réduit (il défilera) et collé en haut
+    x, y, w, h = fit_popup((100, 300, 140, 60), (300, 2000), screen)
+    assert y == 4 and h == 1040 - 8
+    # bord droit : décalé vers la gauche pour rester visible
+    x, y, w, h = fit_popup((1300, 100, 140, 60), (300, 200), screen)
+    assert x + w <= 1366 - 4

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QFont, QGuiApplication
-from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from fleur.db import Database, PlayerNote
 from fleur.hud import win32
@@ -166,10 +166,35 @@ def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
             f"<b>{sv.format(sd.kind)}</b></td>"
             f"<td style='color:#888'>&nbsp;{sample}</td></tr>"
         )
-    rows.append(render_streets(totals, cfg))
-    rows.append(render_positions(by_pos or {}, cfg))
-    rows.append(render_shown(shown or []))
-    return f"<table cellspacing=0 cellpadding=1>{''.join(rows)}</table>"
+    # Deux colonnes pour rester compact : stats à gauche, détails à droite
+    right = render_streets(totals, cfg) + render_positions(by_pos or {}, cfg) + render_shown(shown or [])
+    left = f"<table cellspacing=0 cellpadding=1>{''.join(rows)}</table>"
+    if not right:
+        return left
+    return (f"<table cellspacing=0 cellpadding=0><tr><td valign=top>{left}</td><td width=14></td>"
+            f"<td valign=top><table cellspacing=0 cellpadding=1>{right}</table></td></tr></table>")
+
+
+def fit_popup(anchor: tuple[int, int, int, int], size: tuple[int, int],
+              screen: tuple[int, int, int, int], margin: int = 4) -> tuple[int, int, int, int]:
+    """Position et taille du popup pour qu'il tienne entièrement dans l'écran.
+
+    `anchor` = (x, y, largeur, hauteur) du panneau ; renvoie (x, y, largeur, hauteur).
+    On le place sous le panneau, sinon au-dessus, sinon contre le haut de l'écran ;
+    s'il reste trop grand, sa taille est réduite (il défile alors)."""
+    ax, ay, aw, ah = anchor
+    sx, sy, sw, sh = screen
+    w = min(size[0], sw - 2 * margin)
+    h = min(size[1], sh - 2 * margin)
+    below, above = ay + ah + 2, ay - h - 2
+    if below + h <= sy + sh - margin:
+        y = below
+    elif above >= sy + margin:
+        y = above
+    else:
+        y = sy + sh - margin - h
+    x = min(max(ax, sx + margin), sx + sw - margin - w)
+    return x, max(y, sy + margin), w, h
 
 
 def _pct_cell(sv, key: str, totals: dict, cfg: dict) -> str:
@@ -199,6 +224,46 @@ def render_streets(totals: dict[str, float], cfg: dict) -> str:
     return "".join(rows)
 
 
+class StatsPopup(QScrollArea):
+    """Popup détaillé : toujours entièrement visible à l'écran (défile si besoin).
+    Clic gauche ou Échap pour le fermer."""
+
+    def __init__(self):
+        super().__init__(None)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+                            | Qt.WindowType.WindowStaysOnTopHint)
+        self.setStyleSheet("QScrollArea { background:#1d1d1d; border:1px solid #555; }"
+                           "QLabel { background:#1d1d1d; color:#e8e8e8; padding:4px; }")
+        self.label = QLabel()
+        self.label.setTextFormat(Qt.TextFormat.RichText)
+        self.label.mousePressEvent = lambda _e: self.hide()
+        self.setWidget(self.label)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+        else:
+            super().keyPressEvent(event)
+
+    def set_html(self, text: str) -> None:
+        self.label.setText(text)
+        self.label.adjustSize()
+
+    def place(self, anchor) -> None:
+        screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        hint = self.label.sizeHint()
+        bar = self.verticalScrollBar().sizeHint().width()
+        x, y, w, h = fit_popup((anchor.x(), anchor.y(), anchor.width(), anchor.height()),
+                               (hint.width() + 4, hint.height() + 4),
+                               (avail.x(), avail.y(), avail.width(), avail.height()))
+        if h < hint.height() + 4:  # il va défiler : place pour la barre
+            w = min(w + bar, avail.width() - 8)
+        self.setGeometry(x, y, w, h)
+
+
 class HudPanel(QWidget):
     def __init__(self, table: "TableHud", visual: int, cfg: dict):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
@@ -210,7 +275,7 @@ class HudPanel(QWidget):
         self.note: PlayerNote | None = None
         self._drag_from: QPoint | None = None
         self._moved = False
-        self._popup: QLabel | None = None
+        self._popup: "StatsPopup | None" = None
 
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(cfg.get("opacity", 0.85))
@@ -238,8 +303,8 @@ class HudPanel(QWidget):
         self.setToolTip(html.escape(note.note) if note and note.note.strip() else "")
         self.adjustSize()
         if self._popup and self._popup.isVisible():
-            self._popup.setText(self.popup_html())
-            self._popup.adjustSize()
+            self._popup.set_html(self.popup_html())
+            self._popup.place(self.frameGeometry())
 
     def popup_html(self) -> str:
         db = self.table.manager.db
@@ -308,14 +373,9 @@ class HudPanel(QWidget):
             self._popup.hide()
             return
         if not self._popup:
-            self._popup = QLabel(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
-                                 | Qt.WindowType.WindowStaysOnTopHint)
-            self._popup.setTextFormat(Qt.TextFormat.RichText)
-            self._popup.setStyleSheet("background:#1d1d1d; color:#e8e8e8; border:1px solid #555; padding:4px;")
-            self._popup.mousePressEvent = lambda _e: self._popup.hide()
-        self._popup.setText(self.popup_html())
-        self._popup.adjustSize()
-        self._popup.move(self.frameGeometry().bottomLeft() + QPoint(0, 2))
+            self._popup = StatsPopup()
+        self._popup.set_html(self.popup_html())
+        self._popup.place(self.frameGeometry())
         self._popup.show()
 
     def close_all(self) -> None:
