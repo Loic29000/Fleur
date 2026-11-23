@@ -16,6 +16,8 @@ def app_dir() -> Path:
     return path
 
 
+B, G, Y, R = "#4fa3ff", "#7ddc6f", "#ffd84a", "#ff6b6b"  # bleu, vert, jaune, rouge
+
 DEFAULT_CONFIG: dict = {
     # Dossiers d'historiques ; vide = détection automatique
     "history_dirs": [],
@@ -38,16 +40,38 @@ DEFAULT_CONFIG: dict = {
         "donk", "xr", "af", "afq", "wtsd", "wsd", "wwsf", "bb100", "net",
     ],
     # Couleurs : [seuil max (exclu), couleur]. La dernière s'applique au-delà.
+    # Code : bleu = serré/passif, vert = standard, jaune = large/agressif,
+    # rouge = très large/très agressif. Pour les stats de fold, rouge = ne
+    # lâche presque jamais, bleu = lâche beaucoup.
     "colors": {
-        "vpip": [[15, "#4fa3ff"], [25, "#7ddc6f"], [35, "#ffd84a"], [999, "#ff6b6b"]],
-        "pfr": [[10, "#4fa3ff"], [20, "#7ddc6f"], [28, "#ffd84a"], [999, "#ff6b6b"]],
-        "3bet": [[4, "#4fa3ff"], [9, "#7ddc6f"], [13, "#ffd84a"], [999, "#ff6b6b"]],
-        "af": [[1.5, "#4fa3ff"], [3, "#7ddc6f"], [4.5, "#ffd84a"], [999, "#ff6b6b"]],
-        "f3bet": [[40, "#ff6b6b"], [60, "#7ddc6f"], [999, "#4fa3ff"]],
-        "fcbet": [[35, "#ff6b6b"], [55, "#7ddc6f"], [999, "#4fa3ff"]],
+        "vpip": [[15, B], [25, G], [35, Y], [999, R]],
+        "pfr": [[10, B], [20, G], [28, Y], [999, R]],
+        "3bet": [[4, B], [9, G], [13, Y], [999, R]],
+        "4bet": [[1.5, B], [4, G], [7, Y], [999, R]],
+        "rfi": [[15, B], [28, G], [38, Y], [999, R]],
+        "limp": [[3, G], [10, Y], [999, R]],
+        "cc": [[5, B], [12, G], [20, Y], [999, R]],
+        "sqz": [[3, B], [8, G], [13, Y], [999, R]],
+        "steal": [[25, B], [40, G], [55, Y], [999, R]],
+        "3bsteal": [[5, B], [10, G], [16, Y], [999, R]],
+        "cbet": [[45, B], [65, G], [80, Y], [999, R]],
+        "cbet_t": [[35, B], [55, G], [70, Y], [999, R]],
+        "rcbet": [[5, B], [12, G], [20, Y], [999, R]],
+        "donk": [[5, G], [12, Y], [999, R]],
+        "xr": [[5, B], [12, G], [20, Y], [999, R]],
+        "af": [[1.5, B], [3, G], [4.5, Y], [999, R]],
+        "afq": [[30, B], [45, G], [55, Y], [999, R]],
+        "wtsd": [[22, B], [30, G], [36, Y], [999, R]],
+        "wwsf": [[40, B], [50, G], [56, Y], [999, R]],
+        "f3bet": [[40, R], [60, G], [999, B]],
+        "fsteal": [[55, R], [75, G], [999, B]],
+        "fcbet": [[35, R], [55, G], [999, B]],
+        "fcbet_t": [[35, R], [55, G], [999, B]],
+        "wsd": [[45, R], [55, G], [999, B]],
+        "bb100": [[0, R], [999, G]],
     },
     # Nombre minimum de mains avant de colorer les stats
-    "min_hands_for_colors": 30,
+    "min_hands_for_colors": 10,
     "font_size": 9,
     "opacity": 0.85,
     "poll_interval_ms": 1000,
@@ -74,7 +98,13 @@ def load_config(path: Path | None = None) -> dict:
     if path.exists():
         try:
             user = json.loads(path.read_text(encoding="utf-8"))
-            cfg.update(user)
+            for key, value in user.items():
+                # Dictionnaires (couleurs) : on complète avec les nouvelles
+                # clés par défaut au lieu de les remplacer entièrement.
+                if isinstance(value, dict) and isinstance(cfg.get(key), dict):
+                    cfg[key].update(value)
+                else:
+                    cfg[key] = value
         except (OSError, json.JSONDecodeError) as exc:
             print(f"[fleur] config illisible ({exc}), valeurs par défaut utilisées")
     else:

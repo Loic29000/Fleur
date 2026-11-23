@@ -57,6 +57,7 @@ def render_lines(player: str, totals: dict[str, float], cfg: dict) -> str:
 
 def render_popup(player: str, totals: dict[str, float], cfg: dict) -> str:
     stats = compute_all(totals)
+    hands = totals.get("hands", 0)
     rows = [f"<tr><td colspan=3><b>{html.escape(player)}</b></td></tr>"]
     for key in cfg["popup_stats"]:
         sd = STAT_BY_KEY.get(key)
@@ -65,7 +66,8 @@ def render_popup(player: str, totals: dict[str, float], cfg: dict) -> str:
         sv = stats[key]
         sample = "" if sd.kind in ("count", "money", "bb100") else f"{int(sv.num)}/{int(sv.den)}"
         rows.append(
-            f"<tr><td>{sd.label}</td><td align=right><b>{sv.format(sd.kind)}</b></td>"
+            f"<tr><td>{sd.label}</td><td align=right style='color:{color_for(key, sv, hands, cfg)}'>"
+            f"<b>{sv.format(sd.kind)}</b></td>"
             f"<td style='color:#888'>&nbsp;{sample}</td></tr>"
         )
     return f"<table cellspacing=0 cellpadding=1>{''.join(rows)}</table>"
