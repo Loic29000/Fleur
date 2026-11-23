@@ -24,11 +24,11 @@ Charlie calls 0.08€
 Bob checks
 Charlie bets 0.15€
 Bob folds
-Charlie collected 0.30€ from pot
+Charlie collected 0.45€ from pot
 *** SUMMARY ***
-Total pot 0.31€ | Rake 0.01€
+Total pot 0.45€ | Rake 0.01€
 Board: [7c 8d 2s Jh]
-Seat 3: Charlie (button) won 0.30€
+Seat 3: Charlie (button) won 0.45€
 
 
 Winamax Poker - CashGame - HandId: #18334871-1002-1700000060 - Holdem no limit (0.01€/0.02€) - 2026/11/20 20:31:40 UTC
@@ -51,10 +51,10 @@ Dave folds
 Eve folds
 Hero folds
 Alice folds
-Charlie collected 0.15€ from pot
+Charlie collected 0.27€ from pot
 *** SUMMARY ***
-Total pot 0.15€ | No rake
-Seat 3: Charlie won 0.15€
+Total pot 0.27€ | No rake
+Seat 3: Charlie won 0.27€
 
 
 Winamax Poker - CashGame - HandId: #18334871-1003-1700000120 - Holdem no limit (0.01€/0.02€) - 2026/11/20 20:32:30 UTC
@@ -93,7 +93,7 @@ Dave shows [9d 9h] (Three of a kind : 9's)
 Eve shows [Ad Kd] (Two pairs : Aces and Kings)
 Dave collected 3.93€ from pot
 *** SUMMARY ***
-Total pot 4.13€ | Rake 0.20€
+Total pot 3.93€ | Rake 0.20€
 Board: [Ah 9c 4d 2c Ks]
 Seat 4: Dave showed [9d 9h] and won 3.93€ with Three of a kind : 9's
 Seat 5: Eve (button) showed [Ad Kd] and lost with Two pairs : Aces and Kings

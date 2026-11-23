@@ -33,11 +33,14 @@ def find_history_dirs() -> list[Path]:
     userprofile = os.environ.get("USERPROFILE")
     if userprofile:
         roots.append(Path(userprofile) / "Documents")
+    # Anciennes versions : Documents\Winamax Poker\accounts ; client actuel :
+    # %APPDATA%\winamax\documents\accounts (sans sous-dossier "Winamax Poker").
+    account_roots = [root / "Winamax Poker" / "accounts" for root in roots]
     appdata = os.environ.get("APPDATA")
     if appdata:
-        roots.append(Path(appdata) / "winamax" / "documents")
-    for root in roots:
-        accounts = root / "Winamax Poker" / "accounts"
+        wina = Path(appdata) / "winamax" / "documents"
+        account_roots += [wina / "accounts", wina / "Winamax Poker" / "accounts"]
+    for accounts in account_roots:
         if accounts.is_dir():
             for acc in accounts.iterdir():
                 hist = acc / "history"
@@ -52,10 +55,14 @@ def _is_history_file(path: Path) -> bool:
 
 
 class HistoryWatcher:
-    def __init__(self, db: Database, directories: list[Path], diagnostics: "Diagnostics | None" = None):
+    def __init__(self, db: Database, directories: list[Path], diagnostics: "Diagnostics | None" = None,
+                 include_tournaments: bool = False):
         self.db = db
         self.directories = [Path(d) for d in directories]
         self.diagnostics = diagnostics
+        # Les mains de tournoi sont en jetons : par défaut on ne les mélange
+        # pas aux stats de cash game.
+        self.include_tournaments = include_tournaments
         self._done_sizes: dict[str, int] = {}  # taille déjà entièrement lue, par fichier
 
     def files(self) -> list[Path]:
@@ -98,7 +105,10 @@ class HistoryWatcher:
             return []
         text = data[:consumed].decode("utf-8-sig", errors="replace")
         on_error = self.diagnostics.parse_error if self.diagnostics else None
-        inserted = self.db.add_hands(iter_hands(text, on_error=on_error))
+        hands = iter_hands(text, on_error=on_error)
+        if not self.include_tournaments:
+            hands = (h for h in hands if not h.is_tournament)
+        inserted = self.db.add_hands(hands)
         self.db.set_file_offset(key, offset + consumed)
         if offset + consumed == stat.st_size:
             self._done_sizes[key] = stat.st_size

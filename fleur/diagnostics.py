@@ -156,12 +156,15 @@ def consistency_problems(hand: Hand) -> list[str]:
     if not hand.collected:
         problems.append("aucun gagnant trouvé")
     else:
+        # Somme des gains = argent ajouté (ESCAPE) - rake
         total = sum(_net_results(hand).values())
         tolerance = max(0.011, (hand.bb or 0) * 0.01)
-        if abs(total + hand.rake) > tolerance:
+        if abs(total + hand.rake - hand.added_money) > tolerance:
             problems.append(f"gains incohérents (somme {total:+.2f}, rake {hand.rake:.2f})")
         elif hand.total_pot is not None:
-            pot = sum(hand.collected.values()) - total  # mises effectivement disputées
+            # "Total pot" Winamax = tout ce qui a été misé + ajouté, rake déduit
+            invested = sum(hand.collected.values()) - total + sum(hand.uncalled.values())
+            pot = invested + hand.added_money - hand.rake
             if abs(pot - hand.total_pot) > tolerance:
                 problems.append(f"pot recalculé {pot:.2f} au lieu de {hand.total_pot:.2f}")
     return problems

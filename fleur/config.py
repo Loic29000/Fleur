@@ -53,6 +53,9 @@ DEFAULT_CONFIG: dict = {
     "poll_interval_ms": 1000,
     # Texte à chercher dans le titre de la fenêtre en plus du nom de la table
     "window_title_contains": "",
+    # Importer aussi les mains de tournoi (jetons) : désactivé pour ne pas
+    # fausser les stats et gains de cash game
+    "include_tournaments": False,
 }
 
 

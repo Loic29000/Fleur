@@ -369,7 +369,7 @@ def _net_results(hand: Hand) -> dict[str, float]:
         for a in hand.actions:
             if a.street != street or a.player not in invested:
                 continue
-            if a.kind == "post_ante":
+            if a.kind in ("post_ante", "post_dead"):
                 invested[a.player] += a.amount
             elif a.kind in ("post_sb", "post_bb", "post_other", "call", "bet"):
                 street_put[a.player] = street_put.get(a.player, 0.0) + a.amount
@@ -378,17 +378,10 @@ def _net_results(hand: Hand) -> dict[str, float]:
         for p, v in street_put.items():
             invested[p] += v
 
-    refund = dict(hand.uncalled)
-    total_collected = sum(hand.collected.values())
-    if not refund and len(invested) >= 2:
-        ranked = sorted(invested.items(), key=lambda kv: kv[1], reverse=True)
-        (top, top_amt), (_, second_amt) = ranked[0], ranked[1]
-        excess = top_amt - second_amt
-        pot_without_excess = sum(invested.values()) - excess
-        # Si l'encaissé dépasse le pot "contesté", la mise non suivie est déjà
-        # incluse dans "collected" : on ne la rend pas deux fois.
-        if excess > 1e-9 and total_collected <= pot_without_excess + 1e-6:
-            refund[top] = excess
+    # Winamax n'écrit pas de ligne "Uncalled bet" : la mise non suivie est
+    # incluse dans "collected" (vérifié sur de vraies mains, avec et sans rake).
+    # On ne rembourse donc que ce qu'une ligne "Uncalled bet" annonce.
+    refund = hand.uncalled
     return {
         p: hand.collected.get(p, 0.0) + refund.get(p, 0.0) - invested[p]
         for p in invested

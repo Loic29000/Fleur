@@ -59,8 +59,13 @@ ces fichiers, la configuration et la liste des fenêtres ouvertes. Les mains
 mal lues qu'il contient incluent les pseudos de la table.
 
 Le dossier d'historiques est détecté automatiquement
-(`Documents\Winamax Poker\accounts\<pseudo>\history`). Sinon :
+(`%APPDATA%\winamax\documents\accounts\<pseudo>\history` pour le client actuel,
+`Documents\Winamax Poker\accounts\<pseudo>\history` pour les anciens). Sinon :
 `python -m fleur --history "C:\chemin\vers\history"`.
+
+Seules les mains de cash game (tables classiques et ESCAPE) sont importées.
+Les mains de tournoi (jetons) sont ignorées sauf si `include_tournaments`
+vaut `true` dans la configuration.
 
 ### Sur la table
 

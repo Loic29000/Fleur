@@ -37,3 +37,12 @@ def test_last_hand_needs_summary_and_settle():
     assert complete_prefix_length(data, settled=True) == len(data)
     assert complete_prefix_length(data + b"\n\n", settled=False) == len(data) + 2
     assert complete_prefix_length(data[: first_end - 200], settled=True) == 0
+
+
+def test_find_history_dirs_current_client(tmp_path, monkeypatch):
+    # Client Winamax actuel : %APPDATA%\winamax\documents\accounts\<pseudo>\history
+    from fleur.watcher import find_history_dirs
+    hist = tmp_path / "winamax" / "documents" / "accounts" / "pseudo" / "history"
+    hist.mkdir(parents=True)
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    assert hist in find_history_dirs()

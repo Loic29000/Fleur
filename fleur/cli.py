@@ -21,13 +21,13 @@ def _history_dirs(cfg: dict, override: list[str] | None) -> list[Path]:
     return find_history_dirs()
 
 
-def cmd_import(db: Database, dirs: list[Path]) -> int:
+def cmd_import(db: Database, dirs: list[Path], cfg: dict | None = None) -> int:
     if not dirs:
         print("Aucun dossier d'historique trouvé. Indiquez-le avec --history "
               "ou dans la config (history_dirs).")
         return 1
     diag = diagnostics.get()
-    watcher = HistoryWatcher(db, dirs, diag)
+    watcher = HistoryWatcher(db, dirs, diag, (cfg or {}).get("include_tournaments", False))
     files = watcher.files()
     print(f"Import de {len(files)} fichier(s) depuis : " + ", ".join(map(str, dirs)))
     total = 0
@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Rapport créé : {out}")
             return 0
         if command == "import":
-            return cmd_import(db, dirs)
+            return cmd_import(db, dirs, cfg)
         if command == "stats":
             return cmd_stats(db, args.players, args.list)
         # hud
@@ -132,9 +132,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(message)
             return 1
         if not getattr(args, "no_import", False):
-            cmd_import(db, dirs)
+            cmd_import(db, dirs, cfg)
         from fleur.hud.overlay import run_hud
-        return run_hud(db, HistoryWatcher(db, dirs, diagnostics.get()), cfg,
+        return run_hud(db, HistoryWatcher(db, dirs, diagnostics.get(), cfg.get("include_tournaments", False)), cfg,
                        app_dir() / "layouts.json", dirs)
     finally:
         db.close()

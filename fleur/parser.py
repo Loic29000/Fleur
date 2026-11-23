@@ -31,8 +31,11 @@ _STREET_RE = re.compile(r"^\*\*\* (?P<street>[A-Z /-]+?) \*\*\*(?P<rest>.*)$")
 _ACTION_RE = re.compile(
     r"^(?P<name>.+?) (?P<verb>folds|checks|calls|bets|raises|"
     r"posts small blind|posts big blind|posts ante|posts straddle|posts dead blind)"
-    r"(?: (?P<amt>[^\s]+))?(?: to (?P<to>[^\s]+))?(?P<allin> and is all-in)?\s*$"
+    r"(?: (?P<amt>[^\s]+))?(?: to (?P<to>[^\s]+))?(?P<allin> and is all-in)?"
+    r"(?P<oop> out of position)?\s*$"
 )
+# ESCAPE : argent ajouté au pot par Winamax avant la main
+_ADDED_RE = re.compile(r"^Escape to Pot: total (?P<amt>\S+)\s*$")
 _COLLECT_RE = re.compile(r"^(?P<name>.+?) collected (?P<amt>[^\s]+) from")
 _SHOWS_RE = re.compile(r"^(?P<name>.+?) shows \[(?P<cards>[^\]]+)\]")
 _UNCALLED_RE = re.compile(r"^Uncalled bet \((?P<amt>[^)]+)\) returned to (?P<name>.+?)\s*$")
@@ -77,7 +80,9 @@ def parse_amount(text: str | None) -> float:
 class Action:
     street: str  # preflop, flop, turn, river
     player: str
-    kind: str  # fold, check, call, bet, raise, post_sb, post_bb, post_ante, post_other
+    # fold, check, call, bet, raise, post_sb, post_bb, post_ante,
+    # post_other (blinde vivante hors position, straddle), post_dead (blinde morte)
+    kind: str
     amount: float = 0.0  # montant ajouté (call/bet) ou relance (raise "X to Y" -> X)
     to: float = 0.0  # pour raise : total de la mise sur la street
     allin: bool = False
@@ -106,14 +111,22 @@ class Hand:
     collected: dict[str, float] = field(default_factory=dict)
     shown: dict[str, str] = field(default_factory=dict)
     uncalled: dict[str, float] = field(default_factory=dict)
+    # Chez Winamax, "Total pot" est net du rake et inclut les mises non suivies
     total_pot: float | None = None
     rake: float = 0.0
+    added_money: float = 0.0  # "Escape to Pot" (ESCAPE)
     unknown_lines: list[str] = field(default_factory=list)
     raw: str = ""
 
     @property
     def is_cash(self) -> bool:
-        return "cashgame" in self.kind.lower().replace(" ", "")
+        """Cash game classique ou ESCAPE (cash game « fast fold » de Winamax)."""
+        kind = self.kind.lower().replace(" ", "")
+        return "cashgame" in kind or kind.startswith("escape")
+
+    @property
+    def is_tournament(self) -> bool:
+        return self.kind.lower().startswith("tournament")
 
     @property
     def players(self) -> list[str]:
@@ -218,6 +231,10 @@ def parse_hand(text: str) -> Hand:
                 hand.seats[int(seat_m["seat"])] = (name, parse_amount(seat_m["stack"]))
                 known.append(name)
                 continue
+            added_m = _ADDED_RE.match(line)
+            if added_m:
+                hand.added_money += parse_amount(added_m["amt"])
+                continue
 
         if section == "summary":
             won_m = _SUMMARY_WON_RE.match(line)
@@ -289,6 +306,11 @@ def _make_action(street: str, m: re.Match, known: list[str]) -> Action:
         "posts straddle": "post_other",
         "posts dead blind": "post_other",
     }[verb]
+    if m["oop"]:
+        # Blindes payées en arrivant à la table ("out of position"). Winamax
+        # compte les deux dans le total "raises X to Y" du joueur : on les
+        # cumule donc dans sa mise de la street, comme une blinde vivante.
+        kind = "post_other"
     if kind == "raise" and not to:
         to = amount
     return Action(street=street, player=player, kind=kind, amount=amount, to=to, allin=bool(m["allin"]))

@@ -35,7 +35,7 @@ def test_actions_board_collected():
     assert h1.board == ["7c", "8d", "2s", "Jh"]
     raise_ = [a for a in h1.actions if a.kind == "raise"][0]
     assert (raise_.player, raise_.amount, raise_.to) == ("Bob", 0.04, 0.06)
-    assert h1.collected == {"Charlie": 0.30}
+    assert h1.collected == {"Charlie": 0.45}
     assert h3.board == ["Ah", "9c", "4d", "2c", "Ks"]
     allin = [a for a in h3.actions if a.allin]
     assert allin and allin[0].player == "Dave" and allin[0].amount == 0.44
