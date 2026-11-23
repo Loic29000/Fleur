@@ -151,6 +151,44 @@ def install(app: AnalysisApp) -> None:
         used = app.db().mark_tags()
         return "json", {"tags": list(dict.fromkeys(default + sorted(used))), "counts": used}
 
+    @app.route("GET /api/goals")
+    def goals(app, _id, query, _body):
+        from fleur.progress import goals_report, suggest_goals
+        from fleur.stats import STAT_DEFS
+        hero = _hero(app, query)
+        return "json", {"goals": goals_report(app.db(), hero), "suggestions": suggest_goals(app.db(), hero),
+                        "stats": [{"key": s.key, "label": s.label, "description": s.description}
+                                  for s in STAT_DEFS if s.kind in ("pct", "ratio", "bb100")]}
+
+    @app.route("POST /api/goals/add")
+    def goal_add(app, _id, query, body):
+        from fleur.stats import STAT_BY_KEY
+        body = body or {}
+        if body.get("stat") not in STAT_BY_KEY:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "stat inconnue")
+
+        def num(key):
+            v = body.get(key)
+            return None if v in (None, "") else float(v)
+        low, high = num("low"), num("high")
+        if low is None and high is None:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "indique un minimum et/ou un maximum")
+        if low is not None and high is not None and low > high:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "le minimum dépasse le maximum")
+        return "json", {"id": app.db().add_goal(body["stat"], low, high, body.get("position") or "")}
+
+    @app.route("POST /api/goals/delete")
+    def goal_delete(app, _id, query, body):
+        app.db().delete_goal(int((body or {}).get("id", 0)))
+        return "json", {"ok": True}
+
+    @app.route("GET /api/compare")
+    def compare(app, _id, query, _body):
+        from fleur.progress import compare_periods
+        q = lambda k: query.get(k) or None
+        return "json", compare_periods(app.db(), _hero(app, query), (q("a_start"), q("a_end")),
+                                       (q("b_start"), q("b_end")))
+
     @app.route("GET /api/ranges")
     def ranges(app, _id, query, _body):
         return "json", analysis.ranges(app.db(), _hero(app, query), query.get("position", ""), _float(query, "bb"))

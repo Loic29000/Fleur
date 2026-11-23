@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS hand_marks (
     comment    TEXT NOT NULL DEFAULT '',
     updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS goals (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    stat       TEXT NOT NULL,
+    position   TEXT NOT NULL DEFAULT '',
+    low        REAL,
+    high       REAL,
+    created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -257,6 +265,58 @@ class Database:
             f"SELECT {group}, {sums} FROM player_hands ph{join} WHERE {' AND '.join(where)} GROUP BY {group}",
             params,
         ).fetchall()
+
+    def period_totals(self, player: str, start: str | None = None, end: str | None = None,
+                      position: str = "") -> dict[str, float]:
+        """Compteurs d'un joueur entre deux dates (ISO, UTC ; `end` exclue)."""
+        where, params = ["ph.player = ?"], [player]
+        if start:
+            where.append("h.played_at >= ?")
+            params.append(start)
+        if end:
+            where.append("h.played_at < ?")
+            params.append(end)
+        if position:
+            where.append("ph.position = ?")
+            params.append(position)
+        sums = ", ".join(f"SUM(ph.{k})" for k in ALL_COUNTERS)
+        row = self.conn.execute(f"SELECT {sums} FROM player_hands ph JOIN hands h ON h.hand_id = ph.hand_id "
+                                f"WHERE {' AND '.join(where)}", params).fetchone()
+        return dict(zip(ALL_COUNTERS, (v or 0 for v in row)))
+
+    def weekly_totals(self, player: str, position: str = "") -> list[tuple[str, dict[str, float]]]:
+        """Compteurs d'un joueur semaine par semaine : [(début de semaine, compteurs)]."""
+        where, params = ["ph.player = ?", "h.played_at IS NOT NULL"], [player]
+        if position:
+            where.append("ph.position = ?")
+            params.append(position)
+        sums = ", ".join(f"SUM(ph.{k})" for k in ALL_COUNTERS)
+        # lundi de la semaine de la main
+        week = "date(h.played_at, '-' || ((CAST(strftime('%w', h.played_at) AS INTEGER) + 6) % 7) || ' days')"
+        rows = self.conn.execute(
+            f"SELECT {week} w, {sums} FROM player_hands ph JOIN hands h ON h.hand_id = ph.hand_id "
+            f"WHERE {' AND '.join(where)} GROUP BY w ORDER BY w", params).fetchall()
+        return [(r[0], dict(zip(ALL_COUNTERS, (v or 0 for v in r[1:])))) for r in rows]
+
+    # -- objectifs -------------------------------------------------------------
+    def goals(self) -> list[dict]:
+        rows = self.conn.execute("SELECT id, stat, position, low, high, created_at FROM goals ORDER BY id").fetchall()
+        return [{"id": r[0], "stat": r[1], "position": r[2], "low": r[3], "high": r[4], "created_at": r[5]}
+                for r in rows]
+
+    def add_goal(self, stat: str, low: float | None, high: float | None, position: str = "") -> int:
+        with self.conn:
+            existing = self.conn.execute("SELECT id FROM goals WHERE stat=? AND position=?", (stat, position)).fetchone()
+            if existing:
+                self.conn.execute("UPDATE goals SET low=?, high=? WHERE id=?", (low, high, existing[0]))
+                return existing[0]
+            cur = self.conn.execute("INSERT INTO goals (stat, position, low, high, created_at) VALUES (?,?,?,?,?)",
+                                    (stat, position, low, high, datetime.now().isoformat(timespec="seconds")))
+            return cur.lastrowid
+
+    def delete_goal(self, goal_id: int) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM goals WHERE id=?", (goal_id,))
 
     def top_players(self, limit: int = 20) -> list[tuple[str, int]]:
         return self.conn.execute(

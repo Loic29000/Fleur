@@ -79,6 +79,7 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
     <button data-tab="ranges">Ranges</button>
     <button data-tab="ev">All-in EV</button>
     <button data-tab="sessions">Sessions</button>
+    <button data-tab="progres">Progression</button>
     <button data-tab="stats">Stats perso</button>
     <button data-tab="equite">Équité</button>
     <button data-tab="outils">Outils</button>
@@ -189,6 +190,38 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
     <section class="grow"><h2>Sessions</h2><div class="scroll"><table><thead><tr><th>Début</th><th class="n">Durée</th><th class="n">Mains</th><th class="n">Mains/h</th><th class="n">Tables</th><th class="n">Gains</th><th class="n">BB/100</th></tr></thead><tbody id="s-rows"></tbody></table></div></section>
     <section class="grow"><h2>Par table</h2><div class="scroll"><table><thead><tr><th>Table</th><th class="n">Mains</th><th class="n">Gains</th><th class="n">BB/100</th></tr></thead><tbody id="s-tables"></tbody></table></div></section>
   </div>
+</div>
+
+<!-- ======================= Progression ======================= -->
+<div class="tab" id="tab-progres">
+  <section>
+    <h2>Mes objectifs</h2>
+    <p class="note">Chaque objectif suit une stat semaine après semaine (bande verte = zone visée). Le statut se base sur
+      tes 4 dernières semaines. Un point manque quand la semaine compte trop peu d'occasions.</p>
+    <div id="gl-list"></div>
+    <div class="filters" style="margin-top:12px">
+      <label>Stat <select id="gl-stat"></select></label>
+      <label>Position <select id="gl-pos"><option value="">Toutes</option></select></label>
+      <label>Minimum <input id="gl-low" type="number" step="0.1" style="width:90px"></label>
+      <label>Maximum <input id="gl-high" type="number" step="0.1" style="width:90px"></label>
+      <button class="b p" id="gl-add">Ajouter l'objectif</button><span id="gl-msg" class="note"></span>
+    </div>
+    <h2 style="margin-top:14px">Suggestions d'après tes fuites</h2><table><tbody id="gl-sugg"></tbody></table>
+  </section>
+  <section>
+    <h2>Comparer deux périodes</h2>
+    <div class="filters">
+      <label>Comparaison <select id="cp-preset">
+        <option value="month">Ce mois-ci / mois dernier</option><option value="30">30 derniers jours / 30 jours d'avant</option>
+        <option value="week">Cette semaine / semaine dernière</option><option value="year">Cette année / année dernière</option>
+        <option value="custom">Dates au choix</option></select></label>
+      <label>Période A du <input type="date" id="cp-as"></label><label>au <input type="date" id="cp-ae"></label>
+      <label>Période B du <input type="date" id="cp-bs"></label><label>au <input type="date" id="cp-be"></label>
+      <button class="b p" id="cp-go">Comparer</button>
+    </div>
+    <div class="kpis" id="cp-kpis"></div>
+    <div class="scroll"><table><thead><tr><th>Stat</th><th class="n">Période A</th><th class="n">Période B</th><th class="n">Écart</th><th>Description</th></tr></thead><tbody id="cp-rows"></tbody></table></div>
+  </section>
 </div>
 
 <!-- ======================= Stats perso ======================= -->
@@ -564,7 +597,73 @@ async function loadDashboard() {
   $("#d-pos").innerHTML = grp(d.by_position); $("#d-stake").innerHTML = grp(d.by_stake); $("#d-format").innerHTML = grp(d.by_format);
 }
 
-const LOADERS = {bord: loadDashboard, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
+// ---------------- progression ----------------
+function sparkline(g) {
+  const W = 300, H = 70, vals = g.series.map(p => p.value), real = vals.filter(v => v != null);
+  if (!real.length) return `<span class="muted">pas encore assez de mains par semaine</span>`;
+  let lo = Math.min(...real, g.low ?? Infinity), hi = Math.max(...real, g.high ?? -Infinity);
+  const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad;
+  const x = i => 4 + (W - 8) * (vals.length > 1 ? i / (vals.length - 1) : 0.5), y = v => 4 + (H - 8) * (hi - v) / (hi - lo);
+  let band = "";
+  if (g.low != null || g.high != null) { const top = y(g.high ?? hi), bot = y(g.low ?? lo);
+    band = `<rect x="0" y="${top}" width="${W}" height="${Math.max(bot - top, 1)}" fill="rgba(125,220,111,.15)"/>`; }
+  let path = "", pen = false;
+  vals.forEach((v, i) => { if (v == null) { pen = false; return; } path += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)} `; pen = true; });
+  const dots = vals.map((v, i) => v == null ? "" : `<circle cx="${x(i)}" cy="${y(v)}" r="2.2" fill="#ffd84a"><title>${g.series[i].week} : ${v.toFixed(1)} (${g.series[i].sample})</title></circle>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px;height:${H}px">${band}<path d="${path}" fill="none" stroke="#ffd84a" stroke-width="1.5"/>${dots}</svg>`;
+}
+const fmtGoal = g => g.low != null && g.high != null ? `${g.low} – ${g.high}` : g.low != null ? `≥ ${g.low}` : `≤ ${g.high}`;
+async function loadGoals() {
+  const d = await api("goals");
+  if (!$("#gl-stat").options.length) {
+    $("#gl-stat").innerHTML = d.stats.map(s => `<option value="${s.key}" title="${esc(s.description)}">${esc(s.label)} — ${esc(s.description)}</option>`).join("");
+    META.positions.forEach(p => $("#gl-pos").insertAdjacentHTML("beforeend", `<option>${p}</option>`));
+  }
+  const color = {"atteint":"var(--pos)", "trop bas":"var(--neg)", "trop élevé":"var(--neg)", "pas assez de mains":"var(--muted)"};
+  $("#gl-list").innerHTML = d.goals.map(g => `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+    <div style="min-width:240px"><b>${esc(g.label)}${g.position ? " en " + esc(g.position) : ""}</b> <span class="muted">objectif ${fmtGoal(g)}</span><br>
+      <span class="muted">${esc(g.description)}</span><br>
+      Global : <b>${g.value != null ? g.value.toFixed(1) : "-"}</b> · 4 dernières semaines : <b>${g.recent != null ? g.recent.toFixed(1) : "-"}</b>
+      · <b style="color:${color[g.status]}">${g.status}</b></div>
+    <div style="flex:1">${sparkline(g)}</div><button class="b" data-gdel="${g.id}">Supprimer</button></div>`).join("")
+    || `<p class="muted">Aucun objectif. Ajoute-en un ci-dessous ou reprends une suggestion.</p>`;
+  document.querySelectorAll("[data-gdel]").forEach(b => b.onclick = async () => { await api("goals/delete", {}, {id: +b.dataset.gdel}); loadGoals(); });
+  $("#gl-sugg").innerHTML = d.suggestions.map((s, i) => `<tr><td>${esc(s.reason)}</td><td><button class="b" data-sug="${i}">Ajouter comme objectif</button></td></tr>`).join("")
+    || `<tr><td class="muted">Aucune fuite détectée : rien à proposer.</td></tr>`;
+  document.querySelectorAll("[data-sug]").forEach(b => b.onclick = async () => { const s = d.suggestions[+b.dataset.sug];
+    await api("goals/add", {}, {stat: s.stat, position: s.position, low: s.low, high: s.high}); loadGoals(); });
+}
+$("#gl-add").onclick = async () => {
+  try { await api("goals/add", {}, {stat: $("#gl-stat").value, position: $("#gl-pos").value, low: $("#gl-low").value, high: $("#gl-high").value});
+    $("#gl-msg").textContent = ""; loadGoals(); } catch (e) { $("#gl-msg").innerHTML = `<span class="err">${esc(e.message)}</span>`; } };
+
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+function presetDates(p) {  // [début A, fin A, début B, fin B] (fins incluses)
+  const t = new Date(); const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  if (p === "month") { const a = new Date(today.getFullYear(), today.getMonth() - 1, 1), b = new Date(today.getFullYear(), today.getMonth(), 1); return [a, addDays(b, -1), b, today]; }
+  if (p === "30") return [addDays(today, -59), addDays(today, -30), addDays(today, -29), today];
+  if (p === "week") { const monday = addDays(today, -((today.getDay() + 6) % 7)); return [addDays(monday, -7), addDays(monday, -1), monday, today]; }
+  if (p === "year") { const a = new Date(today.getFullYear() - 1, 0, 1), b = new Date(today.getFullYear(), 0, 1); return [a, addDays(b, -1), b, today]; }
+  return null;
+}
+function applyPreset() { const d = presetDates($("#cp-preset").value); if (!d) return;
+  [$("#cp-as").value, $("#cp-ae").value, $("#cp-bs").value, $("#cp-be").value] = d.map(isoDay); }
+$("#cp-preset").onchange = () => { applyPreset(); loadCompare(); };
+async function loadCompare() {
+  if (!$("#cp-as").value) applyPreset();
+  const next = v => v ? isoDay(addDays(new Date(v + "T00:00"), 1)) : "";  // date de fin incluse
+  const d = await api("compare", {a_start: $("#cp-as").value, a_end: next($("#cp-ae").value), b_start: $("#cp-bs").value, b_end: next($("#cp-be").value)});
+  $("#cp-kpis").innerHTML = `<div><span>Période A</span><b>${d.a.hands} mains</b><span class="${cls(d.a.net)}">${money(d.a.net)}</span></div>
+    <div><span>Période B</span><b>${d.b.hands} mains</b><span class="${cls(d.b.net)}">${money(d.b.net)}</span></div>`;
+  $("#cp-rows").innerHTML = d.rows.filter(r => r.key !== "hands" && r.key !== "net").map(r => `<tr><td><b>${esc(r.label)}</b></td>
+    <td class="n">${esc(r.a)} <span class="muted">${r.a_sample ? "(" + Math.round(r.a_sample) + ")" : ""}</span></td>
+    <td class="n">${esc(r.b)} <span class="muted">${r.b_sample ? "(" + Math.round(r.b_sample) + ")" : ""}</span></td>
+    <td class="n">${r.delta == null ? "" : (r.delta > 0 ? "+" : "") + r.delta.toFixed(1)}</td><td class="muted" style="white-space:normal">${esc(r.description)}</td></tr>`).join("");
+}
+$("#cp-go").onclick = () => { $("#cp-preset").value = "custom"; loadCompare(); };
+
+const LOADERS = {bord: loadDashboard, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
   equite: () => {}, outils: loadBackups};
 
 // ---------------- mise à jour automatique ----------------
