@@ -15,7 +15,9 @@ DEFAULT_LAYOUTS: dict[str, list[list[float]]] = {
     "2": [[0.42, 0.74], [0.42, 0.06]],
     "3": [[0.42, 0.74], [0.05, 0.25], [0.78, 0.25]],
     "4": [[0.42, 0.74], [0.04, 0.42], [0.42, 0.06], [0.80, 0.42]],
-    "5": [[0.42, 0.74], [0.04, 0.55], [0.18, 0.08], [0.66, 0.08], [0.80, 0.55]],
+    # 5-max calé sur une capture du client Winamax (nov. 2026) : panneaux
+    # à côté des cartes ou sous le tapis, sans masquer pseudo ni tapis.
+    "5": [[0.56, 0.75], [0.04, 0.665], [0.13, 0.085], [0.785, 0.085], [0.83, 0.665]],
     "6": [[0.42, 0.74], [0.04, 0.58], [0.06, 0.16], [0.42, 0.04], [0.78, 0.16], [0.80, 0.58]],
     "8": [[0.42, 0.76], [0.10, 0.68], [0.02, 0.36], [0.16, 0.06], [0.42, 0.03],
           [0.68, 0.06], [0.82, 0.36], [0.74, 0.68]],
@@ -53,7 +55,10 @@ class Layouts:
         self.save()
 
     def save(self) -> None:
-        self.path.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
+        # On n'enregistre que les formats modifiés à la souris : les autres
+        # profitent ainsi des positions par défaut corrigées dans les mises à jour.
+        changed = {k: v for k, v in self.data.items() if DEFAULT_LAYOUTS.get(k) != v}
+        self.path.write_text(json.dumps(changed, indent=2), encoding="utf-8")
 
     @staticmethod
     def _fallback(max_seats: int) -> list[list[float]]:
