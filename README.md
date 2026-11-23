@@ -82,6 +82,17 @@ vaut `true` dans la configuration.
   cartes, board, ligne d'action résumée et résultat.
 - Les couleurs s'activent à partir de 10 mains (`min_hands_for_colors`).
 
+### Installation et entretien
+
+Menu de l'icône → « Installation » : créer les raccourcis « Fleur HUD » et « Fleur
+Analyse » (bureau et menu Démarrer), et lancer le HUD au démarrage de Windows
+(aussi : `Fleur.exe installer --demarrage oui`). La base est sauvegardée
+automatiquement une fois par jour dans `Documents\Fleur\sauvegardes` (10 copies
+gardées ; `auto_backup`, `backup_interval_hours`, `backup_keep`). Menu
+« Apparence » : thème sombre ou clair, taille de police, opacité. L'onglet
+« Réglages » de l'analyse choisit les stats du panneau et du popup et leurs
+couleurs ; le HUD se met à jour seul quand la configuration change.
+
 ### Analyse après coup
 
 **FleurAnalyse.exe** (`dist\FleurAnalyse\FleurAnalyse.exe`, construit par `build_exe.bat`) :

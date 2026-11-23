@@ -162,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     lk = sub.add_parser("fuites", help="liste les fuites possibles du héros")
     lk.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
     sub.add_parser("config", help="affiche l'emplacement de la configuration")
+    ins = sub.add_parser("installer", help="crée les raccourcis (bureau, menu Démarrer)")
+    ins.add_argument("--demarrage", choices=["oui", "non"], help="lancer le HUD au démarrage de Windows")
     sub.add_parser("diagnostic", help="crée un rapport de diagnostic (zip) sur le bureau")
     args = parser.parse_args(argv)
 
@@ -171,6 +173,14 @@ def main(argv: list[str] | None = None) -> int:
     diagnostics.log.info("démarrage : commande %s", command)
     if command == "windows":
         return cmd_windows()
+    if command == "installer":
+        from fleur import install
+        for link in install.create_shortcuts():
+            print(f"Raccourci : {link}")
+        if args.demarrage:
+            on = install.set_autostart(args.demarrage == "oui")
+            print("Démarrage avec Windows : " + ("activé" if on else "désactivé"))
+        return 0
     if command == "config":
         print(f"Configuration : {config_path()}")
         print(f"Positions HUD : {app_dir() / 'layouts.json'}")

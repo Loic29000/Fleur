@@ -79,6 +79,14 @@ class Tray:
         self._add("Tableau de bord du héros", self.open_dashboard)
         self._add("Sauvegarder la base", self.backup)
         self.menu.addSeparator()
+        install = self.menu.addMenu("Installation")
+        self.autostart = QAction("Lancer Fleur au démarrage de Windows", install, checkable=True)
+        self.autostart.triggered.connect(self.toggle_autostart)
+        install.addAction(self.autostart)
+        act = QAction("Créer les raccourcis (bureau et menu Démarrer)", install)
+        act.triggered.connect(self.create_shortcuts)
+        install.addAction(act)
+        install.aboutToShow.connect(self._sync_install_menu)
         self._add("Ouvrir le dossier de configuration", lambda: open_folder(app_dir()))
         self._add("Ouvrir le dossier des historiques", self.open_history)
         self._add("Créer un rapport de diagnostic", self.create_report)
@@ -140,6 +148,31 @@ class Tray:
         self.manager._config_mtime = self.manager._read_config_mtime()
         self.manager.refresh_all()
         log.info("réglages modifiés : %s", changes)
+
+    def _sync_install_menu(self) -> None:
+        from fleur import install
+        self.autostart.setChecked(install.autostart_enabled())
+
+    def toggle_autostart(self, checked: bool) -> None:
+        from fleur import install
+        try:
+            on = install.set_autostart(checked)
+        except Exception as exc:
+            log.exception("démarrage automatique impossible")
+            self.notify("Fleur", f"Impossible : {exc}", warning=True)
+            self._sync_install_menu()
+            return
+        self.notify("Fleur", "Fleur se lancera avec Windows." if on else "Fleur ne se lancera plus avec Windows.")
+
+    def create_shortcuts(self) -> None:
+        from fleur import install
+        try:
+            made = install.create_shortcuts()
+        except Exception as exc:
+            log.exception("raccourcis impossibles")
+            self.notify("Fleur", f"Raccourcis impossibles : {exc}", warning=True)
+            return
+        self.notify("Raccourcis créés", f"{len(made)} raccourci(s) : « Fleur HUD » et « Fleur Analyse ».")
 
     def open_settings(self) -> None:
         self.open_analysis(tab="reglages")
