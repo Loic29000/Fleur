@@ -10,11 +10,15 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from fleur import __version__
-from fleur.config import app_dir, load_config
+from fleur.config import app_dir, load_config, save_config
+
+SEATS_CHOICES = [("all", "Tous les formats de table"), ("same", "Même format que la table"),
+                 ("hu_apart", "Tête-à-tête à part")]
+STAKES_CHOICES = [("all", "Toutes les limites"), ("same", "Même limite que la table")]
 
 log = logging.getLogger("fleur")
 
@@ -67,6 +71,7 @@ class Tray:
         self.menu.addAction(self.toggle)
         self._add("Recharger la configuration", self.reload_config)
         self._add("Réinitialiser la position des panneaux", self.manager.reset_layouts)
+        self._build_filter_menu()
         self.menu.addSeparator()
         self._add("Ouvrir le dossier de configuration", lambda: open_folder(app_dir()))
         self._add("Ouvrir le dossier des historiques", self.open_history)
@@ -89,6 +94,41 @@ class Tray:
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_problems)
         self.timer.start(5000)
+
+    def _build_filter_menu(self) -> None:
+        sub = self.menu.addMenu("Filtre des stats")
+        self.filter_actions: dict[tuple[str, str], QAction] = {}
+        for field, choices in (("seats", SEATS_CHOICES), ("stakes", STAKES_CHOICES)):
+            group = QActionGroup(sub)
+            group.setExclusive(True)
+            for value, label in choices:
+                action = QAction(label, sub, checkable=True)
+                action.triggered.connect(lambda _=False, f=field, v=value: self.set_filter(f, v))
+                group.addAction(action)
+                sub.addAction(action)
+                self.filter_actions[(field, value)] = action
+            sub.addSeparator()
+        self._sync_filter_menu()
+
+    def _sync_filter_menu(self) -> None:
+        filt = self.manager.cfg.get("stats_filter") or {}
+        for (field, value), action in self.filter_actions.items():
+            action.setChecked(filt.get(field, "all") == value)
+
+    def set_filter(self, field: str, value: str) -> None:
+        """Change un filtre, l'enregistre dans la config et rafraîchit les panneaux."""
+        cfg = load_config()
+        filt = dict(cfg.get("stats_filter") or {})
+        filt[field] = value
+        cfg["stats_filter"] = filt
+        try:
+            save_config(cfg)
+        except OSError as exc:
+            log.warning("config non enregistrée : %s", exc)
+        self.manager.cfg["stats_filter"] = filt
+        self.manager.refresh_all()
+        self._sync_filter_menu()
+        log.info("filtre des stats : %s", filt)
 
     def _add(self, label: str, slot) -> QAction:
         action = QAction(label, self.menu)
@@ -146,6 +186,7 @@ class Tray:
 
     def reload_config(self) -> None:
         self.manager.reload_config(load_config())
+        self._sync_filter_menu()
         self.notify("Fleur", "Configuration rechargée.")
 
     def open_history(self) -> None:

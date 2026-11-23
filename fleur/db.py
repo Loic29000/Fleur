@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS player_hands (
     PRIMARY KEY (hand_id, player)
 );
 CREATE INDEX IF NOT EXISTS idx_player_hands_player ON player_hands(player);
+CREATE INDEX IF NOT EXISTS idx_hands_format ON hands(max_seats, bb);
 CREATE TABLE IF NOT EXISTS player_notes (
     player     TEXT PRIMARY KEY,
     tag        TEXT,
@@ -166,15 +167,34 @@ class Database:
         return self.conn.execute("SELECT COUNT(*) FROM hands").fetchone()[0]
 
     # -- stats ---------------------------------------------------------------
-    def totals(self, players: Iterable[str]) -> dict[str, dict[str, float]]:
+    def totals(self, players: Iterable[str], max_seats: int | None = None, bb: float | None = None,
+               seats_mode: str = "all", stakes_mode: str = "all") -> dict[str, dict[str, float]]:
+        """Sommes des compteurs par joueur.
+
+        Filtres (contexte = table en cours) :
+        - seats_mode "all" : tous formats ; "same" : même nombre de sièges que
+          `max_seats` ; "hu_apart" : tête-à-tête d'un côté, tables à 3+ de l'autre ;
+        - stakes_mode "all" : toutes limites ; "same" : même big blind que `bb`.
+        """
         players = list(players)
         if not players:
             return {}
-        sums = ", ".join(f"SUM({k})" for k in ALL_COUNTERS)
+        sums = ", ".join(f"SUM(ph.{k})" for k in ALL_COUNTERS)
         marks = ", ".join("?" * len(players))
+        where, params = [f"ph.player IN ({marks})"], list(players)
+        if seats_mode == "same" and max_seats:
+            where.append("h.max_seats = ?")
+            params.append(max_seats)
+        elif seats_mode == "hu_apart" and max_seats:
+            where.append("h.max_seats <= 2" if max_seats <= 2 else "h.max_seats > 2")
+        if stakes_mode == "same" and bb:
+            where.append("ABS(h.bb - ?) < 1e-6")
+            params.append(bb)
+        join = " JOIN hands h ON h.hand_id = ph.hand_id" if len(where) > 1 else ""
         rows = self.conn.execute(
-            f"SELECT player, {sums} FROM player_hands WHERE player IN ({marks}) GROUP BY player",
-            players,
+            f"SELECT ph.player, {sums} FROM player_hands ph{join} WHERE {' AND '.join(where)} "
+            f"GROUP BY ph.player",
+            params,
         ).fetchall()
         result = {p: {k: 0.0 for k in ALL_COUNTERS} for p in players}
         for row in rows:

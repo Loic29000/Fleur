@@ -78,6 +78,11 @@ DEFAULT_CONFIG: dict = {
         "lag": ["LAG", "#ffa94d"],
         "maniaque": ["Maniaque", "#d16bff"],
     },
+    # Filtres des stats affichées, selon la table où l'on joue :
+    # seats : "all" (tous formats), "same" (même nombre de sièges max),
+    #         "hu_apart" (tête-à-tête séparé des tables à 3 joueurs et plus)
+    # stakes : "all" (toutes limites) ou "same" (même big blind)
+    "stats_filter": {"seats": "all", "stakes": "all"},
     # Nombre de mains montrées à l'abattage listées dans le popup
     "shown_hands_count": 8,
     # Nombre minimum de mains avant de colorer les stats

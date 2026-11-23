@@ -50,7 +50,8 @@ def cmd_import(db: Database, dirs: list[Path], cfg: dict | None = None) -> int:
     return 0
 
 
-def cmd_stats(db: Database, players: list[str], list_keys: bool) -> int:
+def cmd_stats(db: Database, players: list[str], list_keys: bool,
+              seats: int | None = None, bb: float | None = None) -> int:
     if list_keys:
         for s in STAT_DEFS:
             print(f"{s.key:8} {s.label:7} {s.description}")
@@ -60,7 +61,9 @@ def cmd_stats(db: Database, players: list[str], list_keys: bool) -> int:
         for name, n in db.top_players(25):
             print(f"  {name:24} {n} mains")
         return 0
-    for name, totals in db.totals(players).items():
+    filters = {"max_seats": seats, "bb": bb, "seats_mode": "same" if seats else "all",
+               "stakes_mode": "same" if bb else "all"}
+    for name, totals in db.totals(players, **filters).items():
         stats = compute_all(totals)
         print(f"\n== {name} ==")
         for key, sv in stats.items():
@@ -91,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("stats", help="affiche les stats d'un ou plusieurs joueurs")
     st.add_argument("players", nargs="*")
     st.add_argument("--list", action="store_true", help="liste les stats disponibles")
+    st.add_argument("--seats", type=int, help="seulement les tables de N sièges max (ex. 6)")
+    st.add_argument("--bb", type=float, help="seulement cette big blind (ex. 0.05)")
     sub.add_parser("windows", help="liste les fenêtres ouvertes (diagnostic)")
     sub.add_parser("config", help="affiche l'emplacement de la configuration")
     sub.add_parser("diagnostic", help="crée un rapport de diagnostic (zip) sur le bureau")
@@ -122,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         if command == "import":
             return cmd_import(db, dirs, cfg)
         if command == "stats":
-            return cmd_stats(db, args.players, args.list)
+            return cmd_stats(db, args.players, args.list, args.seats, args.bb)
         # hud
         if not dirs:
             message = ("Aucun dossier d'historique Winamax trouvé.\n"

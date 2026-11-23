@@ -26,6 +26,13 @@ WINDOW_GONE_GRACE_S = 10
 WINDOW_SEARCH_INTERVAL_S = 1.0
 
 
+def stats_filter_args(cfg: dict, hand: Hand) -> dict:
+    """Paramètres de filtre de Database.totals pour la table de `hand`."""
+    filt = cfg.get("stats_filter") or {}
+    return {"max_seats": hand.max_seats, "bb": hand.bb,
+            "seats_mode": filt.get("seats", "all"), "stakes_mode": filt.get("stakes", "all")}
+
+
 def color_for(key: str, sv: StatValue, hands: float, cfg: dict) -> str:
     rules = cfg.get("colors", {}).get(key)
     if not rules or sv.value is None or hands < cfg.get("min_hands_for_colors", 0):
@@ -267,7 +274,7 @@ class TableHud:
         seated = {seat: name for seat, (name, _) in hand.seats.items()}
         if not self.cfg.get("show_hero") and hand.hero:
             seated = {s: n for s, n in seated.items() if n != hand.hero}
-        totals = self.manager.db.totals(seated.values())
+        totals = self.manager.db.totals(seated.values(), **stats_filter_args(self.cfg, hand))
         notes = self.manager.db.notes(seated.values())
 
         for seat in list(self.panels):
