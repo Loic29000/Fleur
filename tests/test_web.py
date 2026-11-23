@@ -73,13 +73,22 @@ def test_hand_list_filters(server):
 def test_replay(server):
     hand_id = next(h["hand_id"] for h in get(server, "/api/hands")["items"] if "-874-" in h["hand_id"])
     r = get(server, f"/api/hand/{hand_id}")
-    texts = [s["text"] for s in r["steps"]]
-    assert texts[0] == "Début de la main"
-    assert "Hero relance à 0.24 € " not in texts and "Hero relance à 0.24 €" in texts
-    assert "Joueur3 relance à 1.54 € (tapis)" in texts
-    assert r["steps"][-1]["text"] == "Joueur3 gagne 3.82 €"
-    # le pot juste avant la distribution = tout ce qui a été misé
-    assert r["steps"][-2]["pot"] == pytest.approx(4.05)
+    steps = r["steps"]
+    texts = [s["text"] for s in steps]
+    assert texts[0] == "Début de la main — Aalen 12, 0.01/0.02 €"
+    assert "Hero : Relance à 0.24 €" in texts and "Joueur3 : Relance à 1.54 € (tapis)" in texts
+    # le pot central ne compte que les mises ramassées ; les mises en cours sont à part
+    flop = next(s for s in steps if s["kind"] == "street" and s["street"] == "flop")
+    assert flop["pot"] == pytest.approx(0.50) and flop["bets"] == {} and flop["board"] == 3
+    allin = next(s for s in steps if s["text"] == "Hero : Suit 1.26 € (tapis)")
+    assert allin["pot"] == pytest.approx(1.0) and allin["bets"] == {"Hero": 1.51, "Joueur3": 1.54}
+    assert set(allin["folded"]) == {"Joueur1", "Joueur2", "Joueur4"} and allin["revealed"] == ["Hero"]
+    showdown = steps[-2]
+    assert showdown["kind"] == "showdown" and set(showdown["revealed"]) == {"Hero", "Joueur3"}
+    assert showdown["descriptions"] == {"Hero": "paire d'as", "Joueur3": "brelan de neuf"} and showdown["pot"] == pytest.approx(4.05)
+    end = steps[-1]
+    assert end["text"] == "Joueur3 gagne 3.82 € (rake 0.23 €)" and end["winners"] == {"Joueur3": 3.82}
+    assert end["pot_won"] == pytest.approx(4.05) and end["stacks"]["Joueur3"] == pytest.approx(3.82)
     hero = next(p for p in r["players"] if p["hero"])
     assert hero["cards"] == ["Ks", "Ac"] and hero["net"] == pytest.approx(-2.0)
 

@@ -53,7 +53,22 @@ tbody tr.click { cursor:pointer; } tbody tr.click:hover, tbody tr.sel { backgrou
 .c-s { color:#e8e8e8; } .c-h { color:#ff6b6b; } .c-d { color:#4fa3ff; } .c-c { color:#7ddc6f; }
 .cards b { margin-right:3px; }
 #replayer svg { width:100%; height:auto; display:block; }
-.steps { max-height:420px; overflow:auto; font-size:13px; }
+.rp-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+.rp-table { background:var(--bg); border-radius:12px; overflow:hidden; }
+.rp-now { min-height:26px; margin:8px 2px 0; font-size:15px; }
+.rp-now b { color:var(--acc); }
+.rp-ctrl { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+.rp-ctrl .icon { min-width:40px; font-size:15px; }
+.rp-streets { display:flex; gap:4px; flex-wrap:wrap; margin-top:8px; }
+.rp-streets button { flex:1; min-width:70px; background:var(--panel2); border:1px solid var(--line); color:var(--muted);
+  border-radius:6px; padding:5px 6px; cursor:pointer; font:inherit; font-size:12px; }
+.rp-streets button.on { color:var(--text); border-color:var(--acc); }
+.rp-streets button small { display:block; font-size:11px; opacity:.8; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.seg button { background:var(--panel2); border:0; color:var(--muted); padding:5px 12px; cursor:pointer; font:inherit; }
+.seg button.on { background:var(--acc); color:#111; }
+.steps .st { display:flex; justify-content:space-between; }
+.steps { max-height:420px; overflow:auto; font-size:13px; position:relative; }
 .steps div { padding:3px 6px; border-radius:5px; cursor:pointer; } .steps div.on { background:var(--panel2); }
 .steps .st { color:var(--muted); font-size:11px; text-transform:uppercase; margin-top:6px; cursor:default; }
 .ctrl { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
@@ -83,6 +98,58 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
 #st-lines .chip { font-size:13px; padding:3px 8px; }
 #st-popup label { display:flex; width:100%; break-inside:avoid; margin-bottom:4px; }
 button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); padding:3px 10px; }
+/* ---------- finitions d'ensemble ---------- */
+body { font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+header { box-shadow:0 1px 0 var(--line), 0 6px 18px rgba(0,0,0,.18); }
+header h1 { font-size:20px; letter-spacing:.2px; white-space:nowrap; }
+nav { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+nav::-webkit-scrollbar { display:none; }
+nav button { white-space:nowrap; font-size:14px; font-weight:500; transition:background .15s, color .15s; }
+#subnav { position:sticky; top:57px; z-index:4; overflow-x:auto; flex-wrap:nowrap; scrollbar-width:none; }
+#subnav button { white-space:nowrap; }
+section, .card { box-shadow:0 1px 2px rgba(0,0,0,.12); overflow-x:auto; }
+h2 { font-size:15px; color:var(--text); letter-spacing:.1px; }
+h2 + .note { margin-top:-4px; }
+button.b { transition:border-color .15s, background .15s; }
+button.b:active { transform:translateY(1px); }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline:2px solid var(--acc); outline-offset:1px; }
+tbody tr:hover { background:color-mix(in srgb, var(--panel2) 60%, transparent); }
+.kpis div { box-shadow:0 1px 2px rgba(0,0,0,.12); }
+.kpis b { display:block; margin-top:2px; }
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:var(--line); border-radius:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+
+/* ---------- écrans étroits / petites fenêtres ---------- */
+@media (max-width: 980px) {
+  main { padding:10px; }
+  header { padding:8px 10px; gap:10px; }
+  #who { display:none; }
+  #subnav { padding:6px 10px; top:53px; }
+  .row { flex-direction:column; gap:10px; }
+  .row > .grow, .row > section { flex:1 1 auto !important; width:100%; min-width:0; }
+  section, .card { padding:10px; margin-bottom:10px; }
+  .filters { gap:8px; }
+  .filters label { flex:1 1 140px; }
+  .filters label input, .filters label select { width:100% !important; }
+  .scroll { max-height:none; }
+  .steps { max-height:260px; }
+  table { font-size:13px; }
+  th, td { padding:4px 6px; }
+}
+@media (max-width: 620px) {
+  header h1 span { display:none; }
+  nav button { padding:6px 9px; font-size:13px; }
+  .kpis { grid-template-columns:1fr 1fr; gap:8px; }
+  .kpis b { font-size:17px; }
+  .grid13 { gap:1px; }
+  .grid13 div { font-size:8.5px; border-radius:2px; }
+  .grid13 div small { display:none; }
+  .rp-ctrl #r-speed { display:none; }
+  .rp-streets button small { display:none; }
+  .legend { font-size:12px; gap:10px; }
+  .chart text { font-size:26px; }
+}
 </style>
 </head>
 <body>
@@ -144,14 +211,23 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
       <div class="ctrl"><button class="b" id="h-more">Afficher plus</button></div>
     </section>
     <section class="grow" id="replayer" style="flex-basis:560px">
-      <h2 id="r-title">Rejoueur</h2>
-      <p class="note">Choisis une main dans la liste. Flèches ← → du clavier pour avancer.</p>
-      <div id="r-table"></div>
-      <div class="ctrl">
-        <button class="b" data-go="first">⏮ Début</button><button class="b" data-go="prev">◀ Préc.</button>
-        <button class="b" data-go="next">Suiv. ▶</button><button class="b" data-go="street">Street ▶▶</button>
-        <button class="b" data-go="last">Fin ⏭</button>
-        <span style="flex:1"></span>
+      <div class="rp-head">
+        <div><h2 id="r-title" style="margin:0">Rejoueur</h2><div id="r-sub" class="note" style="margin:2px 0 0">Choisis une main dans la liste.</div></div>
+        <div class="seg" id="r-unit"><button data-u="eur" class="on">€</button><button data-u="bb">bb</button></div>
+      </div>
+      <div id="r-table" class="rp-table"></div>
+      <div class="rp-now" id="r-now"></div>
+      <div class="rp-ctrl">
+        <button class="b icon" data-go="first" title="Début (Origine)">⏮</button>
+        <button class="b icon" data-go="prev" title="Action précédente (←)">◀</button>
+        <button class="b p icon" id="r-play" title="Lecture automatique (Espace)">▶</button>
+        <button class="b icon" data-go="next" title="Action suivante (→)">▶|</button>
+        <button class="b icon" data-go="street" title="Street suivante">⏭</button>
+        <input type="range" id="r-progress" min="0" value="0" style="flex:1;min-width:120px">
+        <select id="r-speed" title="Vitesse"><option value="1400">Lent</option><option value="900" selected>Normal</option><option value="450">Rapide</option></select>
+      </div>
+      <div class="rp-streets" id="r-streets"></div>
+      <div class="ctrl rp-export">
         <button class="b" id="x-txt">Exporter en texte</button><button class="b" id="x-anon">Texte anonymisé</button>
         <button class="b" id="x-png">Exporter en image</button>
       </div>
@@ -162,6 +238,7 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
         <div class="ctrl"><button class="b p" id="mk-save">Enregistrer la marque</button><span id="mk-msg" class="note"></span></div>
       </div>
       <div class="card" id="gr-box" style="display:none;margin:8px 0"></div>
+      <h2 style="margin-top:12px">Déroulé de la main</h2>
       <div class="steps" id="r-steps"></div>
     </section>
   </div>
@@ -453,6 +530,7 @@ function show(tab) {
   // les vues d'étude sont rechargées à chaque affichage (blocage pendant le jeu)
   if (["gto", "postflop", "gtoreview"].includes(tab)) delete loaded[tab];
   if (!loaded[tab] && LOADERS[tab]) { loaded[tab] = true; LOADERS[tab](); }
+  if (tab === "mains" && CURRENT) setTimeout(drawHand, 0);
   history.replaceState(null, "", location.search + "#" + tab);
 }
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
@@ -510,18 +588,166 @@ async function loadHands(append = false) {
 $("#f-go").onclick = () => loadHands();
 $("#h-more").onclick = () => loadHands(true);
 
+let UNIT = "eur", PLAY = null;
+const amt = v => UNIT === "bb" && CURRENT && CURRENT.bb ? `${(v / CURRENT.bb).toFixed(1)} bb` : `${v.toFixed(2)} €`;
+const STREET_FR = {preflop: "Préflop", flop: "Flop", turn: "Turn", river: "River", showdown: "Abattage", fin: "Résultat"};
 async function openHand(id) {
+  stopPlay();
   CURRENT = await api("hand/" + encodeURIComponent(id));
   STEP = 0;
-  $("#r-title").textContent = `${CURRENT.table} — ${CURRENT.stakes} — ${fmtDate(CURRENT.played_at)}`;
+  const hero = CURRENT.players.find(p => p.hero);
+  $("#r-title").textContent = `${CURRENT.table} · ${CURRENT.stakes}`;
+  $("#r-sub").innerHTML = `${fmtDate(CURRENT.played_at)}${hero ? ` · tes cartes ${cards(hero.cards)} · résultat
+    <b class="${cls(hero.net)}">${money(hero.net)}</b>` : ""}`;
+  $("#r-progress").max = CURRENT.steps.length - 1;
+  // repères de street (avec le pot au début de chaque street)
+  const starts = [];
+  CURRENT.steps.forEach((s, i) => { if (i === 0 || s.street !== CURRENT.steps[i - 1].street) starts.push([s.street, i, s.pot]); });
+  $("#r-streets").innerHTML = starts.map(([st, i, pot]) => `<button data-i="${i}">${STREET_FR[st] || st}<small>pot ${amt(pot)}</small></button>`).join("");
+  document.querySelectorAll("#r-streets button").forEach(b => b.onclick = () => { stopPlay(); STEP = +b.dataset.i; drawHand(); });
+  // déroulé, groupé par street
   $("#r-steps").innerHTML = CURRENT.steps.map((s, i) => {
-    const head = i === 0 || s.street !== CURRENT.steps[i-1].street ? `<div class="st">${s.street === "showdown" ? "fin" : s.street}</div>` : "";
+    const head = i === 0 || s.street !== CURRENT.steps[i - 1].street
+      ? `<div class="st"><span>${STREET_FR[s.street] || s.street}</span><span>pot ${amt(s.pot)}</span></div>` : "";
     return head + `<div data-i="${i}">${esc(s.text)}</div>`; }).join("");
-  document.querySelectorAll("#r-steps div[data-i]").forEach(d => d.onclick = () => { STEP = +d.dataset.i; drawHand(); });
+  document.querySelectorAll("#r-steps div[data-i]").forEach(d => d.onclick = () => { stopPlay(); STEP = +d.dataset.i; drawHand(); });
   drawHand();
   loadMark(CURRENT.hand_id);
   loadHandReview(CURRENT.hand_id);
 }
+document.querySelectorAll("#r-unit button").forEach(b => b.onclick = () => {
+  UNIT = b.dataset.u; document.querySelectorAll("#r-unit button").forEach(x => x.classList.toggle("on", x === b));
+  if (CURRENT) { const keep = STEP; openHandRedraw(keep); } });
+function openHandRedraw(keep) { const id = CURRENT.hand_id; openHand(id).then(() => { STEP = keep; drawHand(); }); }
+$("#r-progress").oninput = () => { stopPlay(); STEP = +$("#r-progress").value; drawHand(); };
+$("#r-play").onclick = () => PLAY ? stopPlay() : startPlay();
+function startPlay() {
+  if (!CURRENT) return;
+  if (STEP >= CURRENT.steps.length - 1) STEP = 0;
+  $("#r-play").textContent = "⏸";
+  PLAY = setInterval(() => { if (STEP >= CURRENT.steps.length - 1) return stopPlay(); STEP++; drawHand(); }, +$("#r-speed").value);
+}
+function stopPlay() { if (PLAY) clearInterval(PLAY); PLAY = null; $("#r-play").textContent = "▶"; }
+$("#r-speed").onchange = () => { if (PLAY) { stopPlay(); startPlay(); } };
+
+// ---- dessin de la table (SVG 1000 x 600, s'adapte à la largeur) ----
+// Table horizontale sur grand écran, verticale sur écran étroit (plus lisible)
+const WIDE = {W: 1000, H: 660, CX: 500, CY: 330, RX: 370, RY: 175, dx: 40, dy: 50};
+const TALL = {W: 640, H: 880, CX: 320, CY: 445, RX: 200, RY: 290, dx: 0, dy: 55};
+let W, H, CX, CY, RX, RY, G;
+function setGeometry() {
+  G = ($("#r-table").clientWidth || 1000) < 620 ? TALL : WIDE;
+  ({W, H, CX, CY, RX, RY} = G);
+}
+function seatXY(i, n) { // 0 = héros en bas, puis sens horaire
+  const a = Math.PI / 2 + 2 * Math.PI * i / n;
+  return [CX + (RX + G.dx) * Math.cos(a), CY + (RY + G.dy) * Math.sin(a)];
+}
+let _resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(_resizeTimer); _resizeTimer = setTimeout(() => CURRENT && drawHand(), 150); });
+const ACTION_COLORS = {fold: "#6b7280", check: "#4fa3ff", call: "#22a06b", bet: "#f08c2e", raise: "#e0566b",
+  post_sb: "#8b95a1", post_bb: "#8b95a1", post_other: "#8b95a1", post_dead: "#8b95a1", post_ante: "#8b95a1"};
+function svgCard(c, x, y, w, faceDown = false) {
+  const h = w * 1.4;
+  if (faceDown) return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${w * 0.12}" fill="#7a2048" stroke="#ff6fa8" stroke-width="1.5"/>
+    <rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${h - 8}" rx="${w * 0.08}" fill="none" stroke="#ff6fa8" stroke-opacity=".5"/>`;
+  const colors = {s: "#2b2b2b", h: "#c0392b", d: "#1f6fd1", c: "#2e9a4a"}, su = c.slice(-1).toLowerCase();
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${w * 0.12}" fill="${colors[su] || "#555"}" stroke="#ffffff" stroke-opacity=".35"/>
+    <text x="${x + w / 2}" y="${y + h * 0.48}" text-anchor="middle" fill="#fff" font-size="${w * 0.48}" font-weight="700">${esc(c.slice(0, -1))}</text>
+    <text x="${x + w / 2}" y="${y + h * 0.85}" text-anchor="middle" fill="#fff" font-size="${w * 0.42}">${SUIT[su] || ""}</text>`;
+}
+function chip(x, y, text) {
+  return `<g><circle cx="${x - 30}" cy="${y}" r="9" fill="#ffd84a" stroke="#a87b00" stroke-width="2"/>
+    <rect x="${x - 18}" y="${y - 12}" width="${Math.max(54, text.length * 8.5)}" height="24" rx="12" fill="#000" fill-opacity=".55"/>
+    <text x="${x - 18 + Math.max(54, text.length * 8.5) / 2}" y="${y + 5}" text-anchor="middle" fill="#ffe680" font-size="15" font-weight="600">${esc(text)}</text></g>`;
+}
+function drawHand() {
+  if (!CURRENT) return;
+  setGeometry();
+  const st = CURRENT.steps[STEP], ps = CURRENT.players, n = Math.max(CURRENT.max_seats || 0, ps.length);
+  const heroSeat = (ps.find(p => p.hero) || ps[0]).seat;
+  const felt = getComputedStyle(document.documentElement).getPropertyValue("--felt").trim() || "#1f5a46";
+  const winners = st.winners || {};
+  let g = `<rect width="${W}" height="${H}" fill="#101215"/>
+    <ellipse cx="${CX}" cy="${CY}" rx="${RX + 22}" ry="${RY + 22}" fill="#3a2a1e"/>
+    <ellipse cx="${CX}" cy="${CY}" rx="${RX}" ry="${RY}" fill="${felt}"/>
+    <ellipse cx="${CX}" cy="${CY}" rx="${RX - 30}" ry="${RY - 30}" fill="none" stroke="#ffffff" stroke-opacity=".06" stroke-width="2"/>`;
+  // pot central + board (5 emplacements)
+  const live = Object.values(st.bets).reduce((a, b) => a + b, 0);
+  const ty = CY - (G === TALL ? 82 : 72);
+  if (st.pot > 0) {
+    g += `<text x="${CX}" y="${ty}" text-anchor="middle" fill="#ffffff" font-size="22" font-weight="700">Pot ${amt(st.pot)}</text>`;
+    if (live > 0) g += `<text x="${CX}" y="${ty + 24}" text-anchor="middle" fill="#cfd8dc" font-size="14">avec les mises en cours : ${amt(st.pot + live)}</text>`;
+  } else if (live > 0) {
+    g += `<text x="${CX}" y="${ty}" text-anchor="middle" fill="#ffffff" font-size="20" font-weight="700">Mises en cours ${amt(live)}</text>`;
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = CX - 2.5 * 62 + i * 62 + 3, y = CY - (G === TALL ? 40 : 30);
+    g += i < st.board ? svgCard(CURRENT.board[i], x, y, 56) :
+      `<rect x="${x}" y="${y}" width="56" height="78" rx="7" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-dasharray="4 4"/>`;
+  }
+  for (const p of ps) {
+    if (p.sitting_out) continue;
+    const vi = ((p.seat - heroSeat) % n + n) % n, [x, y] = seatXY(vi, n);
+    const folded = st.folded.includes(p.name), active = st.player === p.name, won = winners[p.name] > 0;
+    const showCards = p.cards.length && st.revealed.includes(p.name);
+    // cartes au-dessus du siège
+    const cw = 44, cy = y - 92;
+    if (!folded || p.hero) {
+      p.cards.length || !folded ? [0, 1].forEach(k => { const c = p.cards[k];
+        g += `<g opacity="${folded ? 0.35 : 1}">${svgCard(c || "", x - cw - 2 + k * (cw + 4), cy, cw, !showCards)}</g>`; }) : null;
+    }
+    // siège
+    const border = won ? "#ffd84a" : active ? "#ff6fa8" : p.hero ? "#ff6fa8" : "#3a404a";
+    g += `<g opacity="${folded ? 0.45 : 1}">
+      <rect x="${x - 92}" y="${y - 30}" width="184" height="62" rx="14" fill="${active ? "#2a2f37" : "#191c21"}" stroke="${border}" stroke-width="${won || active ? 3 : 1.5}"/>
+      <text x="${x}" y="${y - 6}" text-anchor="middle" fill="#f1f3f5" font-size="17" font-weight="600">${esc(p.name.length > 15 ? p.name.slice(0, 14) + "…" : p.name)}</text>
+      <text x="${x}" y="${y + 19}" text-anchor="middle" fill="#ffd84a" font-size="16">${amt(st.stacks[p.name] ?? p.stack)}</text>
+      <rect x="${x - 92}" y="${y - 44}" width="${p.position.length * 10 + 16}" height="20" rx="10" fill="#4a5361"/>
+      <text x="${x - 92 + (p.position.length * 10 + 16) / 2}" y="${y - 29}" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">${esc(p.position)}</text></g>`;
+    if (p.button) g += `<circle cx="${x + 82}" cy="${y - 34}" r="13" fill="#fff"/><text x="${x + 82}" y="${y - 29}" text-anchor="middle" fill="#111" font-size="14" font-weight="800">D</text>`;
+    // mise devant le joueur (vers le centre)
+    const bet = st.bets[p.name];
+    const k = G === TALL ? 0.58 : 0.42;
+    if (bet) g += chip(x + (CX - x) * k, y + (CY - y) * k, amt(bet));
+    // bulle d'action ou gain
+    let bubble = null, color = null;
+    if (active && st.label) { bubble = st.label; color = ACTION_COLORS[st.action] || "#4a5361"; }
+    if (won) { bubble = `Gagne ${amt(winners[p.name])}`; color = "#b8860b"; }
+    else if (st.kind === "win" && p.net && !folded) { bubble = money(p.net); color = p.net > 0 ? "#2e8b3e" : "#7a2e2e"; }
+    if (st.descriptions && st.descriptions[p.name] && !won) { bubble = st.descriptions[p.name]; color = "#4a5361"; }
+    if (bubble) { const bw = Math.max(90, bubble.length * 9.2);
+      g += `<rect x="${x - bw / 2}" y="${y + 36}" width="${bw}" height="28" rx="14" fill="${color}"/>
+        <text x="${x}" y="${y + 55}" text-anchor="middle" fill="#fff" font-size="15" font-weight="600">${esc(bubble)}</text>`; }
+  }
+  $("#r-table").innerHTML = `<svg id="r-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="Segoe UI, sans-serif">${g}</svg>`;
+  $("#r-now").innerHTML = `<span class="muted">${STEP + 1}/${CURRENT.steps.length} · ${STREET_FR[st.street] || st.street}</span> — <b>${esc(st.text)}</b>`;
+  $("#r-progress").value = STEP;
+  document.querySelectorAll("#r-steps div[data-i]").forEach(d => d.classList.toggle("on", +d.dataset.i === STEP));
+  document.querySelectorAll("#r-streets button").forEach(b => {
+    const i = +b.dataset.i, next = b.nextElementSibling ? +b.nextElementSibling.dataset.i : 1e9;
+    b.classList.toggle("on", STEP >= i && STEP < next); });
+  // garde l'action en cours visible dans la liste, sans faire défiler toute la page
+  const box = $("#r-steps"), on = box.querySelector("div.on");
+  if (on && (on.offsetTop < box.scrollTop || on.offsetTop > box.scrollTop + box.clientHeight - 30))
+    box.scrollTop = on.offsetTop - box.clientHeight / 2;
+}
+document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { stopPlay(); go(b.dataset.go); });
+function go(what) {
+  if (!CURRENT) return; const last = CURRENT.steps.length - 1;
+  if (what === "first") STEP = 0; else if (what === "last") STEP = last;
+  else if (what === "prev") STEP = Math.max(0, STEP - 1); else if (what === "next") STEP = Math.min(last, STEP + 1);
+  else if (what === "street") { const s = CURRENT.steps[STEP].street; while (STEP < last && CURRENT.steps[STEP].street === s) STEP++; }
+  drawHand();
+}
+document.addEventListener("keydown", e => {
+  if (!$("#tab-mains").classList.contains("on") || ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+  if (e.key === "ArrowRight") { stopPlay(); go("next"); }
+  if (e.key === "ArrowLeft") { stopPlay(); go("prev"); }
+  if (e.key === "Home") { stopPlay(); go("first"); }
+  if (e.key === "End") { stopPlay(); go("last"); }
+  if (e.key === " ") { e.preventDefault(); PLAY ? stopPlay() : startPlay(); }
+});
 const ACT_FR = {raise: "ouvrir", "3bet": "3-bet", "4bet": "4-bet", call: "suivre", fold: "passer", limp: "limp"};
 async function loadHandReview(id) {
   const box = $("#gr-box");
@@ -565,51 +791,6 @@ $("#mk-save").onclick = async () => { if (!MARK) return;
   const row = document.querySelector(`#h-rows tr[data-id="${CSS.escape(MARK.hand_id)}"] td:last-child`);
   if (row) row.innerHTML = MARK.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("") + (MARK.comment && !MARK.tags.length ? "✎" : "");
   loadMarkTags(); };
-function seatXY(i, n) { // 0 = héros en bas, puis sens horaire
-  const a = Math.PI / 2 + 2 * Math.PI * i / n;
-  return [450 + 330 * Math.cos(a), 205 + 165 * Math.sin(a)];
-}
-function drawHand() {
-  if (!CURRENT) return;
-  const st = CURRENT.steps[STEP], ps = CURRENT.players, n = CURRENT.max_seats || ps.length;
-  const heroSeat = (ps.find(p => p.hero) || ps[0]).seat;
-  const reveal = st.reveal;
-  let g = `<rect width="900" height="420" fill="#121417"/><ellipse cx="450" cy="205" rx="330" ry="160" fill="#2b3038"/>
-    <ellipse cx="450" cy="205" rx="310" ry="145" fill="${getComputedStyle(document.body).getPropertyValue("--felt")}"/>
-    <text x="450" y="150" text-anchor="middle" fill="#e8e8e8" font-size="16">Pot : ${st.pot.toFixed(2)} €</text>`;
-  CURRENT.board.slice(0, st.board).forEach((c, i) => g += svgCard(c, 335 + i * 48, 170, 42));
-  for (const p of ps) {
-    const vi = ((p.seat - heroSeat) % n + n) % n, [x, y] = seatXY(vi, n);
-    const active = st.player === p.name, folded = CURRENT.steps.slice(0, STEP + 1).some(s => s.player === p.name && /passe/.test(s.text));
-    g += `<g opacity="${p.sitting_out || folded ? 0.45 : 1}"><rect x="${x-70}" y="${y-26}" width="140" height="52" rx="10" fill="${active ? "#3a3f48" : "#1b1e23"}" stroke="${p.hero ? "#ff6fa8" : "#2d323a"}"/>
-      <text x="${x}" y="${y-7}" text-anchor="middle" fill="#e8e8e8" font-size="13">${esc(p.name.slice(0,16))}${p.button ? " Ⓓ" : ""}</text>
-      <text x="${x}" y="${y+12}" text-anchor="middle" fill="#ffd84a" font-size="12">${(st.stacks[p.name] ?? p.stack).toFixed(2)} € · ${esc(p.position)}</text></g>`;
-    if (p.cards.length && (p.hero || reveal)) p.cards.forEach((c, k) => g += svgCard(c, x - 22 * p.cards.length / 2 + k * 22 - 0, y - 62, 30));
-    const bet = st.bets[p.name];
-    if (bet) { const bx = x + (450 - x) * 0.38, by = y + (205 - y) * 0.38;
-      g += `<text x="${bx}" y="${by}" text-anchor="middle" fill="#ffd84a" font-size="12">${bet.toFixed(2)} €</text>`; }
-    if (reveal && p.net) g += `<text x="${x}" y="${y+42}" text-anchor="middle" fill="${p.net > 0 ? "#7ddc6f" : "#ff6b6b"}" font-size="12">${money(p.net)}</text>`;
-  }
-  g += `<text x="450" y="405" text-anchor="middle" fill="#9aa5b1" font-size="13">${esc(st.text)}</text>`;
-  $("#r-table").innerHTML = `<svg id="r-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="Segoe UI, sans-serif">${g}</svg>`;
-  document.querySelectorAll("#r-steps div[data-i]").forEach(d => d.classList.toggle("on", +d.dataset.i === STEP));
-  const on = document.querySelector("#r-steps div.on"); if (on) on.scrollIntoView({block:"nearest"});
-}
-function svgCard(c, x, y, w) {
-  const colors = {s:"#2b2b2b", h:"#c0392b", d:"#1f6fd1", c:"#2e9a4a"}, s = c.slice(-1).toLowerCase(), h = w * 1.35;
-  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${colors[s]||"#555"}"/>
-    <text x="${x + w/2}" y="${y + h*0.62}" text-anchor="middle" fill="#fff" font-size="${w*0.5}" font-weight="bold">${esc(c.slice(0,-1))}${SUIT[s]||""}</text>`;
-}
-document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
-function go(what) {
-  if (!CURRENT) return; const last = CURRENT.steps.length - 1;
-  if (what === "first") STEP = 0; else if (what === "last") STEP = last;
-  else if (what === "prev") STEP = Math.max(0, STEP - 1); else if (what === "next") STEP = Math.min(last, STEP + 1);
-  else if (what === "street") { const s = CURRENT.steps[STEP].street; while (STEP < last && CURRENT.steps[STEP].street === s) STEP++; }
-  drawHand();
-}
-document.addEventListener("keydown", e => { if (!$("#tab-mains").classList.contains("on") || e.target.tagName === "INPUT") return;
-  if (e.key === "ArrowRight") go("next"); if (e.key === "ArrowLeft") go("prev"); });
 function download(blob, name) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -625,7 +806,7 @@ $("#x-anon").onclick = () => exportText(true);
 $("#x-png").onclick = () => {
   const svg = $("#r-svg"); if (!svg) return;
   const img = new Image(), blob = new Blob([new XMLSerializer().serializeToString(svg)], {type:"image/svg+xml"});
-  img.onload = () => { const c = document.createElement("canvas"); c.width = 1800; c.height = 840;
+  img.onload = () => { const c = document.createElement("canvas"); c.width = 2000; c.height = 1320;
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
     c.toBlob(b => download(b, `main_${CURRENT.hand_id}_etape${STEP}.png`)); };
   img.src = URL.createObjectURL(blob);
@@ -746,6 +927,7 @@ $("#bk-go").onclick = async () => { $("#bk-out").textContent = "Sauvegarde…";
   catch (e) { $("#bk-out").innerHTML = `<span class="err">${esc(e.message)}</span>`; } };
 
 async function loadDashboard() {
+  if (!$("#d-kpis").innerHTML) $("#d-kpis").innerHTML = `<div><span>Chargement</span><b>…</b></div>`;
   const d = await api("dashboard"), k = d.kpis, ls = k.last_session;
   $("#d-kpis").innerHTML = `<div><span>Mains</span><b>${k.hands}</b></div>
     <div><span>Gains</span><b class="${cls(k.net)}">${money(k.net)}</b></div>

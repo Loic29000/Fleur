@@ -19,7 +19,22 @@ _VERBS = {
 _BOARD_AT = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
 
 
+_LABELS = {
+    "fold": "Passe", "check": "Check", "call": "Suit", "bet": "Mise", "raise": "Relance",
+    "post_sb": "Petite blinde", "post_bb": "Grosse blinde", "post_ante": "Ante",
+    "post_other": "Blinde", "post_dead": "Blinde morte",
+}
+_STREET_FR = {"preflop": "Préflop", "flop": "Flop", "turn": "Turn", "river": "River"}
+
+
 def replay(hand: Hand) -> dict:
+    """Étapes de rejeu. À chaque étape :
+    - `pot` : le pot central (mises des streets précédentes, ramassées) ;
+    - `bets` : ce que chaque joueur a misé sur la street en cours (devant lui) ;
+    - `stacks` : tapis restants ; `folded` : joueurs couchés ;
+    - `revealed` : joueurs dont les cartes sont visibles (héros toujours, les
+      autres à l'abattage) ; `winners` : gains à la dernière étape."""
+    from fleur.equity import describe_full as describe
     pos = positions(hand)
     counters = hand_counters(hand)
     stacks = {name: stack for _, (name, stack) in hand.seats.items()}
@@ -29,21 +44,39 @@ def replay(hand: Hand) -> dict:
         players.append({
             "seat": seat, "name": name, "stack": stack, "position": pos.get(name, ""),
             "cards": cards.split() if cards else [], "hero": name == hand.hero,
-            "button": seat == hand.button_seat, "net": counters.get(name, {}).get("net", 0.0),
+            "button": seat == hand.button_seat, "net": round(counters.get(name, {}).get("net", 0.0), 2),
             "sitting_out": name not in counters,
         })
 
     pot = hand.added_money
-    steps = [{"street": "preflop", "text": "Début de la main", "pot": round(pot, 2),
-              "stacks": dict(stacks), "bets": {}, "board": 0, "player": None}]
+    bets: dict[str, float] = {}
+    folded: list[str] = []
+    revealed = [hand.hero] if hand.hero else []
+    steps: list[dict] = []
+
+    def add(kind: str, street: str, text: str, player: str | None = None, label: str = "",
+            amount: float = 0.0, board: int = 0, **extra) -> None:
+        steps.append({
+            "kind": kind, "street": street, "text": text, "player": player, "label": label,
+            "amount": round(amount, 2), "pot": round(pot, 2),
+            "bets": {k: round(v, 2) for k, v in bets.items() if v > 0},
+            "stacks": {k: round(v, 2) for k, v in stacks.items()},
+            "folded": list(folded), "revealed": list(revealed), "board": board, **extra,
+        })
+
+    add("start", "preflop", f"Début de la main — {hand.table}, {hand.sb:g}/{hand.bb:g} €")
+    board_n = 0
     for street in ("preflop", "flop", "turn", "river"):
-        bets: dict[str, float] = {}
         acts = [a for a in hand.actions if a.street == street]
-        if street != "preflop" and len(hand.board) >= _BOARD_AT[street]:
-            shown = hand.board[:_BOARD_AT[street]]
-            steps.append({"street": street, "text": f"{street.capitalize()} : {' '.join(shown)}",
-                          "pot": round(pot, 2), "stacks": dict(stacks), "bets": {},
-                          "board": _BOARD_AT[street], "player": None})
+        if street != "preflop":
+            if len(hand.board) < _BOARD_AT[street]:
+                break
+            # les mises de la street précédente rejoignent le pot central
+            pot += sum(bets.values())
+            bets = {}
+            board_n = _BOARD_AT[street]
+            new_cards = hand.board[_BOARD_AT[street] - (3 if street == "flop" else 1):board_n]
+            add("street", street, f"{_STREET_FR[street]} : {' '.join(new_cards)}", board=board_n)
         for a in acts:
             before = bets.get(a.player, 0.0)
             if a.kind == "raise":
@@ -52,27 +85,46 @@ def replay(hand: Hand) -> dict:
                 put = a.amount
             else:
                 put = 0.0
-            if a.kind not in ("post_ante", "post_dead"):
+            if a.kind in ("post_ante", "post_dead"):
+                pot += put  # argent mort : directement au pot
+            else:
                 bets[a.player] = before + put
-            pot += put
             stacks[a.player] = stacks.get(a.player, 0.0) - put
-            verb = _VERBS.get(a.kind, a.kind)
-            amount = a.to if a.kind == "raise" else a.amount
-            text = f"{a.player} {verb}" + (f" {amount:.2f} €" if amount and a.kind not in ("fold", "check") else "")
+            if a.kind == "fold":
+                folded.append(a.player)
+            label = _LABELS.get(a.kind, a.kind)
+            shown_amount = a.to if a.kind == "raise" else a.amount
+            if a.kind == "raise":
+                label = f"Relance à {shown_amount:.2f} €"
+            elif shown_amount and a.kind not in ("fold", "check"):
+                label = f"{label} {shown_amount:.2f} €"
             if a.allin:
-                text += " (tapis)"
-            steps.append({"street": street, "text": text, "pot": round(pot, 2),
-                          "stacks": {k: round(v, 2) for k, v in stacks.items()},
-                          "bets": {k: round(v, 2) for k, v in bets.items()},
-                          "board": _BOARD_AT[street] if street != "preflop" else 0, "player": a.player})
+                label += " (tapis)"
+            add("post" if a.is_post else "action", street, f"{a.player} : {label}", a.player, label,
+                put, board_n, action=a.kind, allin=a.allin)
 
+    pot += sum(bets.values())
+    bets = {}
+    remaining = [p["name"] for p in players if not p["sitting_out"] and p["name"] not in folded]
+    showdown = [n for n in remaining if n in hand.shown]
+    if len(showdown) >= 2:
+        revealed = sorted(set(revealed) | set(showdown))
+        full = hand.board if len(hand.board) == 5 else None
+        hands_desc = {n: describe(hand.shown[n].split() + full) for n in showdown} if full else {}
+        add("showdown", "showdown", "Abattage : " + ", ".join(
+            f"{n} montre {hand.shown[n]}" + (f" ({hands_desc[n]})" if n in hands_desc else "") for n in showdown),
+            board=len(hand.board), descriptions=hands_desc)
+    winners = {n: round(v, 2) for n, v in hand.collected.items()}
     final = dict(stacks)
-    for name, amount in hand.collected.items():
+    for name, amount in winners.items():
         final[name] = final.get(name, 0.0) + amount
-    winners = ", ".join(f"{n} gagne {v:.2f} €" for n, v in hand.collected.items())
-    steps.append({"street": "showdown", "text": winners or "Fin de la main", "pot": 0.0,
-                  "stacks": {k: round(v, 2) for k, v in final.items()}, "bets": {},
-                  "board": len(hand.board), "player": None, "reveal": True})
+    pot_before = pot
+    pot = 0.0
+    stacks = final
+    text = ", ".join(f"{n} gagne {v:.2f} €" for n, v in winners.items()) or "Fin de la main"
+    if hand.rake:
+        text += f" (rake {hand.rake:.2f} €)"
+    add("win", "fin", text, board=len(hand.board), winners=winners, pot_won=round(pot_before, 2))
     return {
         "hand_id": hand.hand_id, "table": hand.table, "max_seats": hand.max_seats,
         "stakes": f"{hand.sb:g}/{hand.bb:g} €", "bb": hand.bb,

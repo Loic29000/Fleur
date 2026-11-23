@@ -159,3 +159,37 @@ def equity(hands: list[list[str] | None], board: list[str] | None = None, dead: 
         "players": [{"win": wins[i] / boards, "tie": ties[i] / boards, "equity": shares[i] / boards}
                     for i in range(n)],
     }
+
+
+_NAMES = {14: "as", 13: "rois", 12: "dames", 11: "valets", 10: "dix", 9: "neuf", 8: "huit", 7: "sept",
+          6: "six", 5: "cinq", 4: "quatre", 3: "trois", 2: "deux"}
+_HIGH = {14: "as", 13: "roi", 12: "dame", 11: "valet", 10: "dix", 9: "neuf", 8: "huit", 7: "sept",
+         6: "six", 5: "cinq", 4: "quatre", 3: "trois", 2: "deux"}
+
+
+def _de(rank: int) -> str:
+    name = _NAMES[rank]
+    return f"d'{name}" if name[0] in "aeiou" else f"de {name}"
+
+
+def describe_full(cards: list[str]) -> str:
+    """'paire de dames', 'full aux rois par les neuf', 'couleur hauteur as'..."""
+    v = evaluate(cards)
+    cat = v[0]
+    if cat == STRAIGHT_FLUSH:
+        return "quinte flush royale" if v[1] == 14 else f"quinte flush hauteur {_HIGH[v[1]]}"
+    if cat == QUADS:
+        return f"carré {_de(v[1])}"
+    if cat == FULL:
+        return f"full aux {_NAMES[v[1]]} par les {_NAMES[v[2]]}"
+    if cat == FLUSH:
+        return f"couleur hauteur {_HIGH[v[1]]}"
+    if cat == STRAIGHT:
+        return f"quinte hauteur {_HIGH[v[1]]}"
+    if cat == TRIPS:
+        return f"brelan {_de(v[1])}"
+    if cat == TWO_PAIR:
+        return f"double paire {_NAMES[v[1]]} et {_NAMES[v[2]]}"
+    if cat == PAIR:
+        return f"paire {_de(v[1])}"
+    return f"hauteur {_HIGH[v[1]]}"
