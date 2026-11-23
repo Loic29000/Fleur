@@ -124,7 +124,8 @@ def install(app: AnalysisApp) -> None:
             app.db(), _hero(app, query), position=query.get("position", ""), result=query.get("result", ""),
             min_pot_bb=_float(query, "min_pot_bb"), bb=_float(query, "bb"), showdown=query.get("showdown", ""),
             cards=query.get("cards", ""), sort=query.get("sort", "date"),
-            limit=int(query.get("limit") or 200), offset=int(query.get("offset") or 0))
+            limit=int(query.get("limit") or 200), offset=int(query.get("offset") or 0),
+            mark=query.get("mark", ""))
 
     @app.route("GET /api/hand/*")
     def hand(app, hand_id, query, _body):
@@ -132,6 +133,23 @@ def install(app: AnalysisApp) -> None:
         if not raw:
             raise ApiError(HTTPStatus.NOT_FOUND, "main introuvable")
         return "json", replay(parse_hand(raw))
+
+    @app.route("GET /api/mark/*")
+    def get_mark(app, hand_id, query, _body):
+        return "json", app.db().mark(hand_id)
+
+    @app.route("POST /api/mark")
+    def save_mark(app, _id, query, body):
+        body = body or {}
+        if not body.get("hand_id") or not app.db().has_hand(body["hand_id"]):
+            raise ApiError(HTTPStatus.NOT_FOUND, "main introuvable")
+        return "json", app.db().save_mark(body["hand_id"], list(body.get("tags") or []), body.get("comment", ""))
+
+    @app.route("GET /api/mark_tags")
+    def mark_tags(app, _id, query, _body):
+        default = app.cfg.get("hand_mark_tags") or []
+        used = app.db().mark_tags()
+        return "json", {"tags": list(dict.fromkeys(default + sorted(used))), "counts": used}
 
     @app.route("GET /api/ranges")
     def ranges(app, _id, query, _body):

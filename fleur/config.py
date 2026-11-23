@@ -109,6 +109,8 @@ DEFAULT_CONFIG: dict = {
     # Stats personnalisées (éditeur dans l'application d'analyse) :
     # [{"key", "label", "num", "den", "kind": pct|ratio|count, "description"}]
     "custom_stats": [],
+    # Étiquettes proposées pour marquer des mains dans la revue
+    "hand_mark_tags": ["à revoir", "erreur", "bien joué", "bluff", "bad beat", "cooler"],
     # Sauvegarde automatique de la base dans Documents\Fleur\sauvegardes
     "auto_backup": True,
     "backup_interval_hours": 24,

@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS shown_hands (
     PRIMARY KEY (hand_id, player)
 );
 CREATE INDEX IF NOT EXISTS idx_shown_player ON shown_hands(player, played_at);
+CREATE TABLE IF NOT EXISTS hand_marks (
+    hand_id    TEXT PRIMARY KEY,
+    tags       TEXT NOT NULL DEFAULT '',
+    comment    TEXT NOT NULL DEFAULT '',
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -288,6 +294,37 @@ class Database:
                 (note.player, note.tag, note.label, note.color, note.note,
                  datetime.now().isoformat(timespec="seconds")),
             )
+
+    # -- mains marquées (revue) ---------------------------------------------
+    def mark(self, hand_id: str) -> dict:
+        row = self.conn.execute("SELECT tags, comment, updated_at FROM hand_marks WHERE hand_id=?",
+                                (hand_id,)).fetchone()
+        if not row:
+            return {"hand_id": hand_id, "tags": [], "comment": "", "updated_at": None}
+        return {"hand_id": hand_id, "tags": [t for t in row[0].split(",") if t], "comment": row[1],
+                "updated_at": row[2]}
+
+    def save_mark(self, hand_id: str, tags: list[str], comment: str) -> dict:
+        tags = sorted({t.strip()[:30] for t in tags if t and t.strip() and "," not in t})
+        comment = (comment or "").strip()[:2000]
+        with self.conn:
+            if not tags and not comment:
+                self.conn.execute("DELETE FROM hand_marks WHERE hand_id=?", (hand_id,))
+            else:
+                self.conn.execute(
+                    "INSERT INTO hand_marks VALUES (?,?,?,?) ON CONFLICT(hand_id) DO UPDATE SET "
+                    "tags=excluded.tags, comment=excluded.comment, updated_at=excluded.updated_at",
+                    (hand_id, ",".join(tags), comment, datetime.now().isoformat(timespec="seconds")))
+        return self.mark(hand_id)
+
+    def mark_tags(self) -> dict[str, int]:
+        """Étiquettes utilisées et nombre de mains pour chacune."""
+        counts: dict[str, int] = {}
+        for (tags,) in self.conn.execute("SELECT tags FROM hand_marks"):
+            for t in tags.split(","):
+                if t:
+                    counts[t] = counts.get(t, 0) + 1
+        return counts
 
     # -- suivi des fichiers ----------------------------------------------------
     def file_offset(self, path: str) -> int:

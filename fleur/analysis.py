@@ -33,9 +33,10 @@ SORTS = {
 
 def hand_list(db: Database, hero: str, position: str = "", result: str = "", min_pot_bb: float = 0,
               bb: float = 0, showdown: str = "", cards: str = "", sort: str = "date",
-              limit: int = 200, offset: int = 0) -> dict:
+              limit: int = 200, offset: int = 0, mark: str = "") -> dict:
     """Mains du héros filtrées. `result` : gagnée/perdue ; `showdown` : oui/non ;
-    `cards` : classe de main de départ (AKs, 77...)."""
+    `cards` : classe de main de départ (AKs, 77...) ; `mark` : « * » pour toute main
+    marquée, ou une étiquette précise."""
     where, params = ["ph.player = ?"], [hero]
     if position:
         where.append("ph.position = ?")
@@ -54,11 +55,17 @@ def hand_list(db: Database, hero: str, position: str = "", result: str = "", min
         where.append("ph.wtsd = 1")
     elif showdown == "non":
         where.append("ph.wtsd = 0")
+    if mark == "*":
+        where.append("m.hand_id IS NOT NULL")
+    elif mark:
+        where.append("(',' || m.tags || ',') LIKE ?")
+        params.append(f"%,{mark},%")
     sql_where = " AND ".join(where)
-    base = f"FROM player_hands ph JOIN hands h ON h.hand_id = ph.hand_id WHERE {sql_where}"
+    base = (f"FROM player_hands ph JOIN hands h ON h.hand_id = ph.hand_id "
+            f"LEFT JOIN hand_marks m ON m.hand_id = h.hand_id WHERE {sql_where}")
     rows = db.conn.execute(
         f"SELECT h.hand_id, h.played_at, h.table_name, h.sb, h.bb, h.max_seats, h.pot, h.hero_cards, "
-        f"ph.position, ph.net, ph.net_bb, ph.wtsd, ph.vpip, ph.pfr {base} ORDER BY {SORTS.get(sort, SORTS['date'])}",
+        f"ph.position, ph.net, ph.net_bb, ph.wtsd, ph.vpip, ph.pfr, m.tags, m.comment {base} ORDER BY {SORTS.get(sort, SORTS['date'])}",
         params,
     ).fetchall()
     if cards:
@@ -67,6 +74,7 @@ def hand_list(db: Database, hero: str, position: str = "", result: str = "", min
         "hand_id": r[0], "played_at": r[1], "table": r[2], "stakes": f"{r[3]:g}/{r[4]:g}", "bb": r[4],
         "max_seats": r[5], "pot": r[6], "pot_bb": (r[6] or 0) / r[4] if r[4] else 0, "cards": r[7] or "",
         "position": r[8] or "", "net": r[9], "net_bb": r[10], "showdown": bool(r[11]),
+        "tags": [t for t in (r[14] or "").split(",") if t], "comment": r[15] or "",
     } for r in rows]
     return {"total": len(items), "items": items[offset:offset + limit]}
 

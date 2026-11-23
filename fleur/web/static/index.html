@@ -65,6 +65,9 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
 .eqrow { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
 .eqbar { height:10px; background:var(--panel2); border-radius:5px; overflow:hidden; flex:1; min-width:120px; }
 .eqbar i { display:block; height:100%; background:var(--pos); }
+.chip { display:inline-block; font-size:11px; padding:1px 7px; border-radius:20px; background:var(--panel2); border:1px solid var(--line); margin:0 3px 2px 0; }
+.chip.on, button.chip.on { background:var(--acc); color:#111; border-color:var(--acc); }
+button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); padding:3px 10px; }
 </style>
 </head>
 <body>
@@ -115,11 +118,12 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
         <label>Pot min. (bb) <input id="f-pot" type="number" min="0" step="5" style="width:80px"></label>
         <label>Limite <select id="f-bb"><option value="">Toutes</option></select></label>
         <label>Main <input id="f-cards" placeholder="ex. AKs, 77" style="width:90px"></label>
+        <label>Marquées <select id="f-mark"><option value="">Toutes les mains</option><option value="*">★ Toutes les marquées</option></select></label>
         <label>Tri <select id="f-sort"><option value="date">Plus récentes</option><option value="pot">Plus gros pots</option><option value="perte">Plus grosses pertes</option><option value="gain">Plus gros gains</option></select></label>
         <button class="b p" id="f-go">Filtrer</button>
       </div>
       <p class="note" id="h-count"></p>
-      <div class="scroll"><table><thead><tr><th>Date</th><th>Pos.</th><th>Cartes</th><th class="n">Pot</th><th class="n">Résultat</th><th>Abatt.</th></tr></thead>
+      <div class="scroll"><table><thead><tr><th>Date</th><th>Pos.</th><th>Cartes</th><th class="n">Pot</th><th class="n">Résultat</th><th>Abatt.</th><th>Marques</th></tr></thead>
       <tbody id="h-rows"></tbody></table></div>
       <div class="ctrl"><button class="b" id="h-more">Afficher plus</button></div>
     </section>
@@ -134,6 +138,12 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
         <span style="flex:1"></span>
         <button class="b" id="x-txt">Exporter en texte</button><button class="b" id="x-anon">Texte anonymisé</button>
         <button class="b" id="x-png">Exporter en image</button>
+      </div>
+      <div class="card" id="mk-box" style="display:none;margin:8px 0">
+        <div class="ctrl" id="mk-tags"></div>
+        <div class="ctrl"><input id="mk-new" placeholder="autre étiquette" style="width:150px"><button class="b" id="mk-add">Ajouter</button></div>
+        <textarea id="mk-comment" rows="2" style="width:100%" placeholder="Commentaire sur cette main"></textarea>
+        <div class="ctrl"><button class="b p" id="mk-save">Enregistrer la marque</button><span id="mk-msg" class="note"></span></div>
       </div>
       <div class="steps" id="r-steps"></div>
     </section>
@@ -292,13 +302,15 @@ function lineChart(series, unit) {
 let H_OFFSET = 0, CURRENT = null, STEP = 0;
 function handFilters() {
   return {position: $("#f-pos").value, result: $("#f-res").value, showdown: $("#f-sd").value,
-    min_pot_bb: $("#f-pot").value || 0, bb: $("#f-bb").value, cards: $("#f-cards").value.trim(), sort: $("#f-sort").value};
+    min_pot_bb: $("#f-pot").value || 0, bb: $("#f-bb").value, cards: $("#f-cards").value.trim(), sort: $("#f-sort").value,
+    mark: $("#f-mark").value};
 }
 async function loadHands(append = false) {
   if (!append) H_OFFSET = 0;
   const data = await api("hands", {...handFilters(), offset: H_OFFSET, limit: 200});
   const rows = data.items.map(h => `<tr class="click" data-id="${esc(h.hand_id)}"><td>${fmtDate(h.played_at)}</td><td>${esc(h.position)}</td>
-    <td>${cards(h.cards)}</td><td class="n">${h.pot_bb.toFixed(1)} bb</td><td class="n ${cls(h.net)}">${money(h.net)}</td><td>${h.showdown ? "oui" : ""}</td></tr>`).join("");
+    <td>${cards(h.cards)}</td><td class="n">${h.pot_bb.toFixed(1)} bb</td><td class="n ${cls(h.net)}">${money(h.net)}</td><td>${h.showdown ? "oui" : ""}</td>
+    <td title="${esc(h.comment)}">${h.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("")}${h.comment && !h.tags.length ? "✎" : ""}</td></tr>`).join("");
   $("#h-rows").innerHTML = append ? $("#h-rows").innerHTML + rows : rows;
   H_OFFSET += data.items.length;
   $("#h-count").textContent = `${data.total} main(s) — ${H_OFFSET} affichée(s)`;
@@ -320,7 +332,36 @@ async function openHand(id) {
     return head + `<div data-i="${i}">${esc(s.text)}</div>`; }).join("");
   document.querySelectorAll("#r-steps div[data-i]").forEach(d => d.onclick = () => { STEP = +d.dataset.i; drawHand(); });
   drawHand();
+  loadMark(CURRENT.hand_id);
 }
+let MARK = null, MARK_TAGS = [];
+async function loadMarkTags() {
+  const d = await api("mark_tags"); MARK_TAGS = d.tags;
+  const sel = $("#f-mark"), keep = sel.value;
+  sel.innerHTML = `<option value="">Toutes les mains</option><option value="*">★ Toutes les marquées</option>` +
+    d.tags.map(t => `<option value="${esc(t)}">${esc(t)}${d.counts[t] ? ` (${d.counts[t]})` : ""}</option>`).join("");
+  sel.value = keep;
+}
+async function loadMark(id) {
+  MARK = await api("mark/" + encodeURIComponent(id));
+  $("#mk-box").style.display = "";
+  $("#mk-comment").value = MARK.comment; $("#mk-msg").textContent = "";
+  drawMarkTags();
+}
+function drawMarkTags() {
+  const all = [...new Set([...MARK_TAGS, ...MARK.tags])];
+  $("#mk-tags").innerHTML = all.map(t => `<button class="chip ${MARK.tags.includes(t) ? "on" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  document.querySelectorAll("#mk-tags button").forEach(b => b.onclick = () => {
+    const t = b.dataset.t; MARK.tags = MARK.tags.includes(t) ? MARK.tags.filter(x => x !== t) : [...MARK.tags, t]; drawMarkTags(); });
+}
+$("#mk-add").onclick = () => { const t = $("#mk-new").value.trim().replace(/,/g, " "); if (!t || !MARK) return;
+  if (!MARK.tags.includes(t)) MARK.tags.push(t); $("#mk-new").value = ""; drawMarkTags(); };
+$("#mk-save").onclick = async () => { if (!MARK) return;
+  MARK = await api("mark", {}, {hand_id: MARK.hand_id, tags: MARK.tags, comment: $("#mk-comment").value});
+  $("#mk-msg").textContent = MARK.tags.length || MARK.comment ? "Main marquée." : "Marque retirée.";
+  const row = document.querySelector(`#h-rows tr[data-id="${CSS.escape(MARK.hand_id)}"] td:last-child`);
+  if (row) row.innerHTML = MARK.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("") + (MARK.comment && !MARK.tags.length ? "✎" : "");
+  loadMarkTags(); };
 function seatXY(i, n) { // 0 = héros en bas, puis sens horaire
   const a = Math.PI / 2 + 2 * Math.PI * i / n;
   return [450 + 330 * Math.cos(a), 205 + 165 * Math.sin(a)];
@@ -523,7 +564,7 @@ async function loadDashboard() {
   $("#d-pos").innerHTML = grp(d.by_position); $("#d-stake").innerHTML = grp(d.by_stake); $("#d-format").innerHTML = grp(d.by_format);
 }
 
-const LOADERS = {bord: loadDashboard, mains: () => loadHands(), ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
+const LOADERS = {bord: loadDashboard, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
   equite: () => {}, outils: loadBackups};
 
 // ---------------- mise à jour automatique ----------------
