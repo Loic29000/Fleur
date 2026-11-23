@@ -10,6 +10,10 @@ from typing import Iterable
 
 from fleur.parser import Hand
 from fleur.stats import ALL_COUNTERS, FLOAT_COUNTERS, hand_counters
+from fleur.summary import ShownHand, shown_hands
+
+# Version du schéma : on complète les données des anciennes bases à l'ouverture
+SCHEMA_VERSION = 2
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS hands (
@@ -40,6 +44,23 @@ CREATE TABLE IF NOT EXISTS player_notes (
     note       TEXT NOT NULL DEFAULT '',
     updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS shown_hands (
+    hand_id   TEXT NOT NULL,
+    player    TEXT NOT NULL,
+    played_at TEXT,
+    cards     TEXT,
+    board     TEXT,
+    line      TEXT,
+    net       REAL,
+    net_bb    REAL,
+    bb        REAL,
+    PRIMARY KEY (hand_id, player)
+);
+CREATE INDEX IF NOT EXISTS idx_shown_player ON shown_hands(player, played_at);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE TABLE IF NOT EXISTS files (
     path   TEXT PRIMARY KEY,
     offset INTEGER NOT NULL
@@ -68,6 +89,38 @@ class Database:
         self.conn = sqlite3.connect(self.path)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        row = self.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        version = int(row[0]) if row else 1
+        if version < 2:
+            self.backfill_shown_hands()
+        if version != SCHEMA_VERSION:
+            with self.conn:
+                self.conn.execute("INSERT OR REPLACE INTO meta VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
+
+    def backfill_shown_hands(self) -> int:
+        """Remplit shown_hands à partir des mains déjà en base (bases antérieures)."""
+        from fleur.parser import parse_hand
+        count = 0
+        cur = self.conn.execute("SELECT raw FROM hands WHERE raw LIKE '%shows [%'")
+        with self.conn:
+            for (raw,) in cur.fetchall():
+                try:
+                    count += self._insert_shown(parse_hand(raw))
+                except Exception:  # une main bizarre ne bloque pas la migration
+                    continue
+        return count
+
+    def _insert_shown(self, hand: Hand) -> int:
+        rows = shown_hands(hand)
+        for sh in rows:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO shown_hands VALUES (?,?,?,?,?,?,?,?,?)",
+                (sh.hand_id, sh.player, sh.played_at, sh.cards, sh.board, sh.line, sh.net, sh.net_bb, sh.bb),
+            )
+        return len(rows)
 
     def close(self) -> None:
         self.conn.close()
@@ -98,8 +151,16 @@ class Database:
                         f"INSERT OR REPLACE INTO player_hands ({cols}) VALUES ({marks})",
                         (hand.hand_id, player, hand.seat_of(player), *(counters[k] for k in ALL_COUNTERS)),
                     )
+                self._insert_shown(hand)
                 inserted.append(hand)
         return inserted
+
+    def last_shown(self, player: str, limit: int = 8) -> list[ShownHand]:
+        rows = self.conn.execute(
+            "SELECT hand_id, player, played_at, cards, board, line, net, net_bb, bb FROM shown_hands "
+            "WHERE player=? ORDER BY played_at DESC, hand_id DESC LIMIT ?", (player, limit),
+        ).fetchall()
+        return [ShownHand(*r) for r in rows]
 
     def hand_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM hands").fetchone()[0]

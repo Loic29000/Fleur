@@ -68,7 +68,38 @@ def render_lines(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
     return "<br>".join(rows)
 
 
-def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerNote | None = None) -> str:
+_SUITS = {"s": ("♠", "#e8e8e8"), "h": ("♥", "#ff6b6b"), "d": ("♦", "#4fa3ff"), "c": ("♣", "#7ddc6f")}
+
+
+def render_cards(cards: str) -> str:
+    """'Ah Kd' -> cartes avec symboles colorés (4 couleurs, comme Winamax)."""
+    out = []
+    for card in cards.split():
+        rank, suit = card[:-1], card[-1:].lower()
+        symbol, color = _SUITS.get(suit, (suit, "#e8e8e8"))
+        out.append(f"<span style='color:{color}'>{html.escape(rank)}{symbol}</span>")
+    return " ".join(out)
+
+
+def render_shown(shown: list) -> str:
+    """Lignes du popup pour les dernières mains montrées à l'abattage."""
+    if not shown:
+        return ""
+    rows = ["<tr><td colspan=3 style='color:#bbbbbb'><br><b>Mains montrées</b></td></tr>"]
+    for sh in shown:
+        color = "#7ddc6f" if sh.net > 0 else "#ff6b6b" if sh.net < 0 else "#e8e8e8"
+        result = f"{sh.net:+.2f} ({sh.net_bb:+.1f} bb)"
+        board = render_cards(sh.board) if sh.board else "<span style='color:#888'>pas de flop</span>"
+        rows.append(
+            f"<tr><td colspan=3><b>{render_cards(sh.cards)}</b>&nbsp; {board}"
+            f"&nbsp; <span style='color:{color}'>{result}</span><br>"
+            f"<span style='color:#aaaaaa'>&nbsp;&nbsp;{html.escape(sh.line)}</span></td></tr>"
+        )
+    return "".join(rows)
+
+
+def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerNote | None = None,
+                 shown: list | None = None) -> str:
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
     rows = [f"<tr><td colspan=3>{render_badge(note)}<b>{html.escape(player)}</b></td></tr>"]
@@ -86,6 +117,7 @@ def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
             f"<b>{sv.format(sd.kind)}</b></td>"
             f"<td style='color:#888'>&nbsp;{sample}</td></tr>"
         )
+    rows.append(render_shown(shown or []))
     return f"<table cellspacing=0 cellpadding=1>{''.join(rows)}</table>"
 
 
@@ -128,8 +160,16 @@ class HudPanel(QWidget):
         self.setToolTip(html.escape(note.note) if note and note.note.strip() else "")
         self.adjustSize()
         if self._popup and self._popup.isVisible():
-            self._popup.setText(render_popup(player, totals, self.cfg, note))
+            self._popup.setText(self.popup_html())
             self._popup.adjustSize()
+
+    def popup_html(self) -> str:
+        try:
+            shown = self.table.manager.db.last_shown(self.player, self.cfg.get("shown_hands_count", 8))
+        except Exception:
+            log.exception("lecture des mains montrées impossible")
+            shown = []
+        return render_popup(self.player, self.totals, self.cfg, self.note, shown)
 
     # -- étiquettes et notes (clic droit) ----------------------------------
     def contextMenuEvent(self, event):
@@ -191,7 +231,7 @@ class HudPanel(QWidget):
             self._popup.setTextFormat(Qt.TextFormat.RichText)
             self._popup.setStyleSheet("background:#1d1d1d; color:#e8e8e8; border:1px solid #555; padding:4px;")
             self._popup.mousePressEvent = lambda _e: self._popup.hide()
-        self._popup.setText(render_popup(self.player, self.totals, self.cfg, self.note))
+        self._popup.setText(self.popup_html())
         self._popup.adjustSize()
         self._popup.move(self.frameGeometry().bottomLeft() + QPoint(0, 2))
         self._popup.show()

@@ -78,6 +78,8 @@ vaut `true` dans la configuration.
   affiche une pastille de couleur et ✎ quand une note existe (survol = la note).
   Notes et étiquettes sont stockées en base (table `player_notes`) ; la liste des
   étiquettes se règle dans `player_tags`.
+- Le popup liste aussi les dernières mains montrées à l'abattage (`shown_hands_count`, 8 par défaut) :
+  cartes, board, ligne d'action résumée et résultat.
 - Les couleurs s'activent à partir de 10 mains (`min_hands_for_colors`).
 
 ### Panneau par défaut

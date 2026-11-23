@@ -78,6 +78,8 @@ DEFAULT_CONFIG: dict = {
         "lag": ["LAG", "#ffa94d"],
         "maniaque": ["Maniaque", "#d16bff"],
     },
+    # Nombre de mains montrées à l'abattage listées dans le popup
+    "shown_hands_count": 8,
     # Nombre minimum de mains avant de colorer les stats
     "min_hands_for_colors": 10,
     "font_size": 9,
