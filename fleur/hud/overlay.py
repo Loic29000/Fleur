@@ -15,6 +15,7 @@ from fleur.db import Database, PlayerNote
 from fleur.hud import win32
 from fleur.hud.layouts import Layouts, visual_index
 from fleur.parser import Hand
+from fleur.profile import classify
 from fleur.stats import STAT_BY_KEY, StatValue, compute_all
 from fleur.watcher import HistoryWatcher
 
@@ -56,10 +57,22 @@ def render_badge(note: PlayerNote | None) -> str:
     return out
 
 
+def render_profile(totals: dict[str, float], cfg: dict) -> str:
+    """Badge de profil automatique, au-delà du seuil de mains configuré."""
+    if not cfg.get("show_profile", True):
+        return ""
+    profile = classify(totals, cfg)
+    if not profile:
+        return ""
+    color = html.escape(profile.color)
+    return f"<span style='color:#111; background:{color}'>&nbsp;{html.escape(profile.label)}&nbsp;</span> "
+
+
 def render_lines(player: str, totals: dict[str, float], cfg: dict, note: PlayerNote | None = None) -> str:
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
-    rows = [render_badge(note) + f"<span style='color:#bbbbbb'>{html.escape(player[:16])}</span>"]
+    rows = [render_profile(totals, cfg) + render_badge(note)
+            + f"<span style='color:#bbbbbb'>{html.escape(player[:16])}</span>"]
     for line in cfg["hud_lines"]:
         parts = []
         for key in line:
@@ -109,7 +122,8 @@ def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
                  shown: list | None = None) -> str:
     stats = compute_all(totals)
     hands = totals.get("hands", 0)
-    rows = [f"<tr><td colspan=3>{render_badge(note)}<b>{html.escape(player)}</b></td></tr>"]
+    rows = [f"<tr><td colspan=3>{render_profile(totals, cfg)}{render_badge(note)}"
+            f"<b>{html.escape(player)}</b></td></tr>"]
     if note and note.note.strip():
         text = html.escape(note.note).replace("\n", "<br>")
         rows.append(f"<tr><td colspan=3 style='color:#ffd84a'>{text}</td></tr>")

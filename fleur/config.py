@@ -83,6 +83,17 @@ DEFAULT_CONFIG: dict = {
     #         "hu_apart" (tête-à-tête séparé des tables à 3 joueurs et plus)
     # stakes : "all" (toutes limites) ou "same" (même big blind)
     "stats_filter": {"seats": "all", "stakes": "all"},
+    # Badge de profil automatique (fish, nit, TAG, LAG, maniaque) calculé sur
+    # VPIP, PFR et AF, affiché à partir de profile_min_hands mains
+    "show_profile": True,
+    "profile_min_hands": 50,
+    "profiles": {
+        "maniaque": ["Maniaque", "#d16bff"],
+        "lag": ["LAG", "#ffa94d"],
+        "fish": ["Fish", "#ff6b6b"],
+        "nit": ["Nit", "#9aa5b1"],
+        "tag": ["TAG", "#4fa3ff"],
+    },
     # Nombre de mains montrées à l'abattage listées dans le popup
     "shown_hands_count": 8,
     # Nombre minimum de mains avant de colorer les stats
