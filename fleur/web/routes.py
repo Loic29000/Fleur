@@ -80,3 +80,25 @@ def install(app: AnalysisApp) -> None:
     def backups(app, _id, query, _body):
         from fleur.backup import list_backups
         return "json", {"items": list_backups()}
+
+    @app.route("GET /api/allin_ev")
+    def allin_ev(app, _id, query, _body):
+        from fleur.allin import hero_allin_report
+        return "json", hero_allin_report(app.db(), _hero(app, query))
+
+    @app.route("POST /api/equity")
+    def equity_calc(app, _id, query, body):
+        """Calculateur d'équité : refusé tant qu'une table Winamax est ouverte
+        (pas d'aide à la décision pendant une partie, règles Winamax)."""
+        from fleur.equity import equity, parse_cards
+        if app.table_open():
+            raise ApiError(HTTPStatus.LOCKED,
+                           "Une table Winamax est ouverte : le calculateur est désactivé pendant le jeu. "
+                           "Ferme tes tables puis réessaie.")
+        body = body or {}
+        try:
+            hands = [parse_cards(h) or None for h in body.get("hands", [])]
+            board = parse_cards(body.get("board", ""))
+            return "json", equity(hands, board, trials=20000)
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))

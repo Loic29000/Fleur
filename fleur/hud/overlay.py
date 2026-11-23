@@ -166,9 +166,37 @@ def render_popup(player: str, totals: dict[str, float], cfg: dict, note: PlayerN
             f"<b>{sv.format(sd.kind)}</b></td>"
             f"<td style='color:#888'>&nbsp;{sample}</td></tr>"
         )
+    rows.append(render_streets(totals, cfg))
     rows.append(render_positions(by_pos or {}, cfg))
     rows.append(render_shown(shown or []))
     return f"<table cellspacing=0 cellpadding=1>{''.join(rows)}</table>"
+
+
+def _pct_cell(sv, key: str, totals: dict, cfg: dict) -> str:
+    if not sv.den:
+        return "<td align=right style='color:#555'>-</td>"
+    color = color_for(key, sv, totals.get("hands", 0), cfg)
+    return (f"<td align=right>&nbsp;<span style='color:{color}'>{sv.value:.0f}</span>"
+            f"<span style='color:#777'>({int(sv.den)})</span></td>")
+
+
+def render_streets(totals: dict[str, float], cfg: dict) -> str:
+    """Mise / fold / relance face à une mise par street, et fold selon la taille de mise."""
+    stats = compute_all(totals)
+    if not any(totals.get(k) for k in ("opp_bet_f", "opp_vs_bet_f", "opp_bet_t", "opp_vs_bet_t",
+                                       "opp_bet_r", "opp_vs_bet_r")):
+        return ""
+    rows = ["<tr><td colspan=3 style='color:#bbbbbb'><br><b>Par street</b></td></tr>",
+            "<tr><td colspan=3><table cellspacing=0 cellpadding=1><tr><td></td><td align=right>Mise</td>"
+            "<td align=right>Fold vs mise</td><td align=right>Relance</td></tr>"]
+    for s, name in (("f", "Flop"), ("t", "Turn"), ("r", "River")):
+        cells = "".join(_pct_cell(stats[k], k, totals, cfg) for k in (f"bet_{s}", f"fvb_{s}", f"rvb_{s}"))
+        rows.append(f"<tr><td>{name}</td>{cells}</tr>")
+    rows.append("</table></td></tr>")
+    for key, label in (("fv_small", "Fold vs petite mise (&lt; ½ pot)"), ("fv_med", "Fold vs mise ½ à 1 pot"),
+                       ("fv_big", "Fold vs overbet"), ("overbet", "Overbets (part des mises)")):
+        rows.append(f"<tr><td>{label}</td>{_pct_cell(stats[key], key, totals, cfg)}<td></td></tr>")
+    return "".join(rows)
 
 
 class HudPanel(QWidget):

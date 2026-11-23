@@ -13,7 +13,7 @@ from fleur.stats import ALL_COUNTERS, FLOAT_COUNTERS, hand_counters, positions
 from fleur.summary import ShownHand, shown_hands
 
 # Version du schéma : on complète les données des anciennes bases à l'ouverture
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS hands (

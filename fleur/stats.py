@@ -31,8 +31,17 @@ INT_COUNTERS = [
     "opp_xr_f", "did_xr_f",
     "post_br", "post_calls", "post_folds",
     "saw_flop", "wtsd", "wsd", "wwsf",
+    # Par street (f = flop, t = turn, r = river) : miser quand personne n'a misé,
+    # et réaction face à une mise
+    *(f"{k}_{s}" for s in "ftr" for k in ("opp_bet", "did_bet", "opp_vs_bet", "fold_vs_bet",
+                                           "call_vs_bet", "raise_vs_bet")),
+    # Taille des mises (en part du pot) : réaction face à petite / moyenne / grosse mise
+    "opp_vs_small", "fold_vs_small", "opp_vs_med", "fold_vs_med", "opp_vs_big", "fold_vs_big",
+    "n_bets", "n_overbets",
 ]
 FLOAT_COUNTERS = ["net", "net_bb"]
+SMALL_BET = 0.5  # moins d'un demi-pot
+BIG_BET = 1.0  # plus que le pot : overbet
 ALL_COUNTERS = INT_COUNTERS + FLOAT_COUNTERS
 
 
@@ -73,6 +82,21 @@ STAT_DEFS: list[StatDef] = [
     StatDef("wtsd", "WTSD", "wtsd", "saw_flop", "pct", "Va à l'abattage après avoir vu le flop"),
     StatDef("wsd", "W$SD", "wsd", "wtsd", "pct", "Gagne à l'abattage"),
     StatDef("wwsf", "WWSF", "wwsf", "saw_flop", "pct", "Gagne la main après avoir vu le flop"),
+    *(StatDef(f"bet_{s}", f"Mise {S}", f"did_bet_{s}", f"opp_bet_{s}", "pct",
+              f"Mise au {name} quand personne n'a encore misé")
+      for s, S, name in (("f", "F", "flop"), ("t", "T", "turn"), ("r", "R", "river"))),
+    *(StatDef(f"fvb_{s}", f"FvM {S}", f"fold_vs_bet_{s}", f"opp_vs_bet_{s}", "pct",
+              f"Fold face à une mise au {name}")
+      for s, S, name in (("f", "F", "flop"), ("t", "T", "turn"), ("r", "R", "river"))),
+    *(StatDef(f"rvb_{s}", f"RvM {S}", f"raise_vs_bet_{s}", f"opp_vs_bet_{s}", "pct",
+              f"Relance face à une mise au {name}")
+      for s, S, name in (("f", "F", "flop"), ("t", "T", "turn"), ("r", "R", "river"))),
+    StatDef("fv_small", "Fv petite", "fold_vs_small", "opp_vs_small", "pct",
+            "Fold face à une petite mise (moins d'un demi-pot)"),
+    StatDef("fv_med", "Fv moyenne", "fold_vs_med", "opp_vs_med", "pct",
+            "Fold face à une mise d'un demi-pot à un pot"),
+    StatDef("fv_big", "Fv overbet", "fold_vs_big", "opp_vs_big", "pct", "Fold face à une mise de plus d'un pot"),
+    StatDef("overbet", "Overbet", "n_overbets", "n_bets", "pct", "Part des mises postflop supérieures au pot"),
     StatDef("bb100", "BB/100", "net_bb", "hands", "bb100", "Gains en big blinds pour 100 mains"),
     StatDef("net", "Gains", "net", "", "money", "Gains nets"),
 ]
@@ -187,6 +211,7 @@ def hand_counters(hand: Hand) -> dict[str, dict[str, float]]:
         c[p]["saw_flop"] = 1
 
     _postflop(hand, c, pfa, flop_players)
+    _street_bets(hand, c)
 
     folded = {a.player for a in hand.actions if a.kind == "fold"}
     remaining = [p for p in players if p not in folded]
@@ -204,6 +229,64 @@ def hand_counters(hand: Hand) -> dict[str, dict[str, float]]:
         c[p]["net"] = round(net, 4)
         c[p]["net_bb"] = round(net / hand.bb, 4) if hand.bb else 0.0
     return c
+
+
+def _street_bets(hand: Hand, c) -> None:
+    """Compteurs par street et selon la taille des mises (en part du pot)."""
+    pot = hand.added_money
+    for street in ("preflop", "flop", "turn", "river"):
+        put: dict[str, float] = {}
+        bet_size: float | None = None  # taille (part du pot) de la mise à laquelle on fait face
+        bet_made = False
+        seen_bet_opp: set[str] = set()
+        faced: set[str] = set()
+        suffix = {"flop": "f", "turn": "t", "river": "r"}.get(street)
+        for a in hand.actions:
+            if a.street != street:
+                continue
+            p = a.player
+            before = put.get(p, 0.0)
+            if a.kind == "raise":
+                amount = max(a.to - before, 0.0)
+            elif a.kind in ("call", "bet", "post_sb", "post_bb", "post_other", "post_ante", "post_dead"):
+                amount = a.amount
+            else:
+                amount = 0.0
+            if suffix and p in c and not a.is_post:
+                if not bet_made and p not in seen_bet_opp:
+                    seen_bet_opp.add(p)
+                    c[p][f"opp_bet_{suffix}"] = 1
+                    if a.kind == "bet":
+                        c[p][f"did_bet_{suffix}"] = 1
+                elif bet_made and p not in faced:
+                    faced.add(p)
+                    c[p][f"opp_vs_bet_{suffix}"] = 1
+                    key = {"fold": "fold_vs_bet", "call": "call_vs_bet", "raise": "raise_vs_bet"}.get(a.kind)
+                    if key:
+                        c[p][f"{key}_{suffix}"] = 1
+                    if bet_size is not None:
+                        bucket = "small" if bet_size < SMALL_BET else "big" if bet_size > BIG_BET else "med"
+                        c[p][f"opp_vs_{bucket}"] += 1
+                        if a.kind == "fold":
+                            c[p][f"fold_vs_{bucket}"] += 1
+                if a.kind in ("bet", "raise"):
+                    pot_before = pot + sum(put.values())
+                    # taille = ce qu'il ajoute au-delà de la mise à suivre, rapportée au pot après suivi
+                    to_call = max(put.values(), default=0.0) - before
+                    size_amount = amount - max(to_call, 0.0)
+                    base = pot_before + max(to_call, 0.0)
+                    bet_size = size_amount / base if base > 0 else None
+                    if a.kind == "bet":
+                        c[p]["n_bets"] += 1
+                        if bet_size is not None and bet_size > BIG_BET:
+                            c[p]["n_overbets"] += 1
+            if a.kind not in ("post_ante", "post_dead"):
+                put[p] = before + amount
+            else:
+                pot += amount
+            if a.kind in ("bet", "raise"):
+                bet_made = True
+        pot += sum(put.values())
 
 
 def _preflop(hand: Hand, c, pos) -> str | None:
@@ -361,28 +444,49 @@ def _postflop(hand: Hand, c, pfa: str | None, flop_players: list[str]) -> str | 
     return pfa if cbet_flop else None
 
 
-def _net_results(hand: Hand) -> dict[str, float]:
-    """Gain net de chaque joueur : encaissé + mises rendues - investi."""
-    invested: dict[str, float] = {p: 0.0 for p in hand.players}
+def invested(hand: Hand, until_street: str | None = None) -> dict[str, float]:
+    """Argent mis au pot par chaque joueur (jusqu'à la fin de `until_street` incluse)."""
+    out: dict[str, float] = {p: 0.0 for p in hand.players}
     for street in ("preflop", "flop", "turn", "river"):
         street_put: dict[str, float] = {}
         for a in hand.actions:
-            if a.street != street or a.player not in invested:
+            if a.street != street or a.player not in out:
                 continue
             if a.kind in ("post_ante", "post_dead"):
-                invested[a.player] += a.amount
+                out[a.player] += a.amount
             elif a.kind in ("post_sb", "post_bb", "post_other", "call", "bet"):
                 street_put[a.player] = street_put.get(a.player, 0.0) + a.amount
             elif a.kind == "raise":
                 street_put[a.player] = max(street_put.get(a.player, 0.0), a.to)
         for p, v in street_put.items():
-            invested[p] += v
+            out[p] += v
+        if street == until_street:
+            break
+    return out
+
+
+def _net_results(hand: Hand) -> dict[str, float]:
+    """Gain net de chaque joueur : encaissé + mises rendues - investi."""
+    invested_: dict[str, float] = {p: 0.0 for p in hand.players}
+    for street in ("preflop", "flop", "turn", "river"):
+        street_put: dict[str, float] = {}
+        for a in hand.actions:
+            if a.street != street or a.player not in invested_:
+                continue
+            if a.kind in ("post_ante", "post_dead"):
+                invested_[a.player] += a.amount
+            elif a.kind in ("post_sb", "post_bb", "post_other", "call", "bet"):
+                street_put[a.player] = street_put.get(a.player, 0.0) + a.amount
+            elif a.kind == "raise":
+                street_put[a.player] = max(street_put.get(a.player, 0.0), a.to)
+        for p, v in street_put.items():
+            invested_[p] += v
 
     # Winamax n'écrit pas de ligne "Uncalled bet" : la mise non suivie est
     # incluse dans "collected" (vérifié sur de vraies mains, avec et sans rake).
     # On ne rembourse donc que ce qu'une ligne "Uncalled bet" annonce.
     refund = hand.uncalled
     return {
-        p: hand.collected.get(p, 0.0) + refund.get(p, 0.0) - invested[p]
-        for p in invested
+        p: hand.collected.get(p, 0.0) + refund.get(p, 0.0) - invested_[p]
+        for p in invested_
     }
