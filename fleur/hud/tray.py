@@ -199,7 +199,17 @@ class Tray:
             log.exception("tableau de bord impossible")
             self.notify("Fleur", f"Tableau de bord impossible : {exc}", warning=True)
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(out)))
+        # os.startfile ouvre le navigateur par défaut de Windows ; l'ouverture
+        # via Qt échouait sans erreur depuis l'exe.
+        try:
+            open_folder(out)
+        except OSError:
+            import webbrowser
+            if not webbrowser.open(out.as_uri()):
+                self.notify("Fleur", f"Ouvrez ce fichier dans votre navigateur : {out}", warning=True)
+                return
+        log.info("tableau de bord ouvert : %s", out)
+        self.notify("Tableau de bord", "Ouvert dans votre navigateur.")
 
     def open_history(self) -> None:
         for d in self.history_dirs:
