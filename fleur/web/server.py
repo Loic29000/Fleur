@@ -43,6 +43,16 @@ class AnalysisApp:
             db = self._local.db = Database(self.db_path)
         return db
 
+    def release(self) -> None:
+        """Ferme la connexion du fil en cours (fin d'une requête HTTP) : une
+        connexion laissée ouverte empêche SQLite de vider son journal (WAL)."""
+        db = getattr(self._local, "db", None)
+        if db is not None:
+            try:
+                db.close()
+            finally:
+                self._local.db = None
+
     def route(self, name: str):
         def deco(fn):
             self.routes[name] = fn
@@ -99,7 +109,10 @@ def make_handler(app: AnalysisApp, token: str):
                 except json.JSONDecodeError:
                     return self._send(400, "text/plain; charset=utf-8", b"JSON invalide")
             try:
-                kind, content = app.handle(method, url.path, query, body)
+                try:
+                    kind, content = app.handle(method, url.path, query, body)
+                finally:
+                    app.release()
             except ApiError as exc:
                 data = json.dumps({"error": str(exc)}, ensure_ascii=False).encode()
                 return self._send(exc.status, "application/json; charset=utf-8", data)

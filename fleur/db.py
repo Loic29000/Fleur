@@ -185,6 +185,13 @@ class Database:
     def close(self) -> None:
         self.conn.close()
 
+    def checkpoint(self) -> None:
+        """Reporte le journal WAL dans la base et le vide (appel périodique)."""
+        try:
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            pass  # base occupée par l'autre programme : on réessaiera
+
     # -- mains ---------------------------------------------------------------
     def has_hand(self, hand_id: str) -> bool:
         return self.conn.execute("SELECT 1 FROM hands WHERE hand_id=?", (hand_id,)).fetchone() is not None

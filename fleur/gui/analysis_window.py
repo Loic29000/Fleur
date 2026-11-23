@@ -73,7 +73,11 @@ class _Importer(threading.Thread):
         watcher = HistoryWatcher(db, self.dirs, diagnostics.get(),
                                  include_tournaments=self.cfg.get("include_tournaments", False),
                                  include_play_money=self.cfg.get("include_play_money", False))
+        rounds = 0
         while not self.stop_event.is_set():
+            rounds += 1
+            if rounds % 120 == 0:  # toutes les 10 minutes environ
+                db.checkpoint()
             try:
                 n = len(watcher.poll())
                 if n:

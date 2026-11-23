@@ -587,6 +587,11 @@ class HudManager(QObject):
         self.config_timer.timeout.connect(self.check_config_file)
         self.config_timer.start(2000)
 
+        # Vidage régulier du journal de la base (sinon il grossit sans fin)
+        self.checkpoint_timer = QTimer(self)
+        self.checkpoint_timer.timeout.connect(self.db.checkpoint)
+        self.checkpoint_timer.start(10 * 60 * 1000)
+
     @staticmethod
     def _read_config_mtime() -> float:
         from fleur.config import config_path

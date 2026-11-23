@@ -118,3 +118,16 @@ def test_hand_class_and_grid():
     assert len(labels) == 13 and all(len(r) == 13 for r in labels)
     assert labels[0][1] == "AKs" and labels[1][0] == "AKo" and labels[12][12] == "22"
     assert len({c for r in labels for c in r}) == 169
+
+
+def test_server_closes_connections_after_each_request(server):
+    import gc
+    import sqlite3
+    for _ in range(20):
+        get(server, "/api/meta")
+    gc.collect()
+    # la base peut être vidée de son journal : aucune connexion du serveur ne le retient
+    conn = sqlite3.connect(server.app.db_path)
+    busy, _, _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    conn.close()
+    assert busy == 0
