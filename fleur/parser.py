@@ -115,6 +115,7 @@ class Hand:
     total_pot: float | None = None
     rake: float = 0.0
     added_money: float = 0.0  # "Escape to Pot" (ESCAPE)
+    play_money: bool = False  # "Table: '...' 5-max (play money)"
     unknown_lines: list[str] = field(default_factory=list)
     raw: str = ""
 
@@ -222,6 +223,7 @@ def parse_hand(text: str) -> Hand:
             if table_m:
                 hand.table = table_m["name"]
                 hand.max_seats = int(table_m["max"])
+                hand.play_money = "(play money)" in line
                 if table_m["button"]:
                     hand.button_seat = int(table_m["button"])
                 continue

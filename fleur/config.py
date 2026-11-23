@@ -56,6 +56,8 @@ DEFAULT_CONFIG: dict = {
     # Importer aussi les mains de tournoi (jetons) : désactivé pour ne pas
     # fausser les stats et gains de cash game
     "include_tournaments": False,
+    # Importer aussi les tables en jetons fictifs (play money)
+    "include_play_money": False,
 }
 
 

@@ -56,13 +56,15 @@ def _is_history_file(path: Path) -> bool:
 
 class HistoryWatcher:
     def __init__(self, db: Database, directories: list[Path], diagnostics: "Diagnostics | None" = None,
-                 include_tournaments: bool = False):
+                 include_tournaments: bool = False, include_play_money: bool = False):
         self.db = db
         self.directories = [Path(d) for d in directories]
         self.diagnostics = diagnostics
         # Les mains de tournoi sont en jetons : par défaut on ne les mélange
         # pas aux stats de cash game.
         self.include_tournaments = include_tournaments
+        # Idem pour les jetons fictifs (play money)
+        self.include_play_money = include_play_money
         self._done_sizes: dict[str, int] = {}  # taille déjà entièrement lue, par fichier
 
     def files(self) -> list[Path]:
@@ -108,6 +110,8 @@ class HistoryWatcher:
         hands = iter_hands(text, on_error=on_error)
         if not self.include_tournaments:
             hands = (h for h in hands if not h.is_tournament)
+        if not self.include_play_money:
+            hands = (h for h in hands if not h.play_money)
         inserted = self.db.add_hands(hands)
         self.db.set_file_offset(key, offset + consumed)
         if offset + consumed == stat.st_size:

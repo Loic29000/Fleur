@@ -124,3 +124,13 @@ def test_tournaments_skipped_by_default(tmp_path):
     assert HistoryWatcher(db, [tmp_path]).poll() == []
     db2 = Database(":memory:")
     assert len(HistoryWatcher(db2, [tmp_path], include_tournaments=True).poll()) == 1
+
+
+def test_play_money_skipped_by_default(tmp_path):
+    text = (FIXTURES / "winamax_reelles.txt").read_text(encoding="utf-8")
+    first = text.split("\n\n\n")[0].replace("(real money)", "(play money)") + "\n\n"
+    (tmp_path / "p.txt").write_text(first, encoding="utf-8")
+    hand = next(iter_hands(first))
+    assert hand.play_money
+    assert HistoryWatcher(Database(":memory:"), [tmp_path]).poll() == []
+    assert len(HistoryWatcher(Database(":memory:"), [tmp_path], include_play_money=True).poll()) == 1
