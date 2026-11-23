@@ -73,6 +73,8 @@ class Tray:
         self._add("Réinitialiser la position des panneaux", self.manager.reset_layouts)
         self._build_filter_menu()
         self.menu.addSeparator()
+        self._add("Tableau de bord du héros", self.open_dashboard)
+        self.menu.addSeparator()
         self._add("Ouvrir le dossier de configuration", lambda: open_folder(app_dir()))
         self._add("Ouvrir le dossier des historiques", self.open_history)
         self._add("Créer un rapport de diagnostic", self.create_report)
@@ -188,6 +190,16 @@ class Tray:
         self.manager.reload_config(load_config())
         self._sync_filter_menu()
         self.notify("Fleur", "Configuration rechargée.")
+
+    def open_dashboard(self) -> None:
+        from fleur.dashboard import write_dashboard
+        try:
+            out = write_dashboard(self.manager.db, app_dir() / "tableau_de_bord.html")
+        except Exception as exc:
+            log.exception("tableau de bord impossible")
+            self.notify("Fleur", f"Tableau de bord impossible : {exc}", warning=True)
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(out)))
 
     def open_history(self) -> None:
         for d in self.history_dirs:

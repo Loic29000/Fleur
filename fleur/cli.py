@@ -1,4 +1,4 @@
-"""Ligne de commande : python -m fleur [hud|import|stats|windows]."""
+"""Ligne de commande : python -m fleur [hud|import|stats|dashboard|fuites|windows|config|diagnostic]."""
 
 from __future__ import annotations
 
@@ -73,6 +73,32 @@ def cmd_stats(db: Database, players: list[str], list_keys: bool,
     return 0
 
 
+def cmd_dashboard(db: Database, hero: str | None, open_it: bool) -> int:
+    from fleur.dashboard import write_dashboard
+    out = write_dashboard(db, app_dir() / "tableau_de_bord.html", hero)
+    print(f"Tableau de bord : {out}")
+    if open_it:
+        import webbrowser
+        webbrowser.open(out.as_uri())
+    return 0
+
+
+def cmd_leaks(db: Database, hero: str | None) -> int:
+    from fleur.dashboard import main_hero
+    from fleur.leaks import find_leaks
+    hero = hero or main_hero(db)
+    if not hero:
+        print("Aucune main du héros en base.")
+        return 1
+    leaks = find_leaks(db.totals([hero])[hero], db.position_totals(hero))
+    print(f"Fuites possibles pour {hero} (fourchettes indicatives cash game 6-max) :")
+    for leak in leaks:
+        print(f"  [{leak.severity:8}] {leak.message}")
+    if not leaks:
+        print("  aucune stat hors des fourchettes de référence")
+    return 0
+
+
 def cmd_windows() -> int:
     from fleur.hud import win32
     if not win32.IS_WINDOWS:
@@ -97,6 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--seats", type=int, help="seulement les tables de N sièges max (ex. 6)")
     st.add_argument("--bb", type=float, help="seulement cette big blind (ex. 0.05)")
     sub.add_parser("windows", help="liste les fenêtres ouvertes (diagnostic)")
+    dash = sub.add_parser("dashboard", help="tableau de bord du héros (page HTML locale)")
+    dash.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
+    dash.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
+    lk = sub.add_parser("fuites", help="liste les fuites possibles du héros")
+    lk.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
     sub.add_parser("config", help="affiche l'emplacement de la configuration")
     sub.add_parser("diagnostic", help="crée un rapport de diagnostic (zip) sur le bureau")
     args = parser.parse_args(argv)
@@ -126,6 +157,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if command == "import":
             return cmd_import(db, dirs, cfg)
+        if command == "dashboard":
+            return cmd_dashboard(db, args.hero, not args.no_open)
+        if command == "fuites":
+            return cmd_leaks(db, args.hero)
         if command == "stats":
             return cmd_stats(db, args.players, args.list, args.seats, args.bb)
         # hud

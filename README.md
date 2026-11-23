@@ -82,6 +82,24 @@ vaut `true` dans la configuration.
   cartes, board, ligne d'action résumée et résultat.
 - Les couleurs s'activent à partir de 10 mains (`min_hands_for_colors`).
 
+### Analyse après coup
+
+- `python -m fleur dashboard` (ou menu de l'icône → « Tableau de bord du héros ») :
+  page HTML locale avec la courbe de gains en € et en big blinds (avec et sans
+  abattage), BB/100 par position, par limite et par format, résultats par session
+  et liste des fuites possibles.
+- `python -m fleur fuites` : la même liste de fuites dans la console, comparée à des
+  fourchettes indicatives de cash game 6-max et triée par importance.
+- `python -m fleur stats <pseudo> --seats 6 --bb 0.02` : stats filtrées.
+
+Dans le HUD : badge de profil automatique (fish, nit, TAG, LAG, maniaque) à partir
+de 50 mains (`profile_min_hands`), RFI / 3-bet / fold face au vol par position dans
+le popup, et filtre des stats par format de table et par limite (menu de l'icône
+→ « Filtre des stats », ou `stats_filter` dans la config).
+
+Fleur n'analyse que les historiques déjà écrits : aucun conseil n'est donné pendant
+une main.
+
 ### Panneau par défaut
 
 ```
