@@ -251,3 +251,22 @@ def opponents(db: Database, hero: str, min_hands: int = 50, limit: int = 150) ->
             "note": note.note if note else "",
         })
     return out
+
+
+def hero_rfi_cells(db: Database, hero: str, position: str, max_seats: int | None = None) -> dict[str, dict]:
+    """Par main de départ : occasions d'ouvrir et ouvertures du héros à une position."""
+    where, params = ["ph.player = ?", "ph.position = ?", "h.hero_cards IS NOT NULL", "ph.opp_unopened = 1"], \
+        [hero, position]
+    if max_seats:
+        where.append("h.max_seats = ?")
+        params.append(max_seats)
+    cells: dict[str, dict] = {}
+    for cards, rfi in db.conn.execute(
+            f"SELECT h.hero_cards, ph.did_rfi FROM player_hands ph JOIN hands h ON h.hand_id = ph.hand_id "
+            f"WHERE {' AND '.join(where)}", params):
+        cls = hand_class(cards)
+        if cls:
+            c = cells.setdefault(cls, {"opp": 0, "rfi": 0})
+            c["opp"] += 1
+            c["rfi"] += rfi
+    return cells

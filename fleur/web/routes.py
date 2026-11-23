@@ -296,6 +296,53 @@ def install(app: AnalysisApp) -> None:
         app.cfg.update(changes)
         return "json", {"saved": sorted(changes)}
 
+    def _study_allowed(app):
+        if app.table_open():
+            raise ApiError(HTTPStatus.LOCKED,
+                           "Une table Winamax est ouverte : le matériel d'étude (GTO, équité) est désactivé "
+                           "pendant le jeu, conformément aux règles Winamax. Ferme tes tables pour réviser.")
+
+    @app.route("GET /api/gto/spots")
+    def gto_spots(app, _id, query, _body):
+        from fleur.gto import SPOTS
+        _study_allowed(app)
+        return "json", {"spots": [{"id": k, "title": v["title"], "group": v["group"], "position": v["position"]}
+                                  for k, v in SPOTS.items()]}
+
+    @app.route("GET /api/gto/spot")
+    def gto_spot(app, _id, query, _body):
+        from fleur.gto import SPOTS, compare_rfi, spot_grid
+        _study_allowed(app)
+        spot_id = query.get("id", "")
+        if spot_id not in SPOTS:
+            raise ApiError(HTTPStatus.NOT_FOUND, "situation inconnue")
+        out = spot_grid(spot_id)
+        if spot_id.startswith("rfi_"):
+            fmt = int(query.get("format") or 6)
+            # en 5-max, la première position (UTG) correspond au HJ du 6-max
+            hero_pos = {6: out["position"], 5: {"HJ": "UTG", "UTG": None}.get(out["position"], out["position"])}[
+                5 if fmt == 5 else 6]
+            hero = analysis.main_hero(app.db())
+            if hero and hero_pos:
+                cells = analysis.hero_rfi_cells(app.db(), hero, hero_pos, fmt)
+                out["hero"] = {"position": hero_pos, "format": fmt,
+                               "cells": {k: round(100 * v["rfi"] / v["opp"]) for k, v in cells.items() if v["opp"]},
+                               "samples": {k: v["opp"] for k, v in cells.items()},
+                               "open_percent": round(100 * sum(v["rfi"] for v in cells.values())
+                                                     / max(1, sum(v["opp"] for v in cells.values())), 1),
+                               **compare_rfi(spot_id, cells)}
+        return "json", out
+
+    @app.route("GET /api/gto/postflop")
+    def gto_postflop(app, _id, query, _body):
+        from fleur.equity import parse_cards
+        from fleur.gto import postflop_advice
+        _study_allowed(app)
+        try:
+            return "json", postflop_advice(parse_cards(query.get("board", "")))
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc))
+
     @app.route("GET /api/ranges")
     def ranges(app, _id, query, _body):
         return "json", analysis.ranges(app.db(), _hero(app, query), query.get("position", ""), _float(query, "bb"))
