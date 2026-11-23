@@ -450,6 +450,8 @@ function show(tab) {
     `<button data-view="${v}" class="${v === tab ? "on" : ""}">${label}</button>`).join("") : "";
   document.querySelectorAll("#subnav button").forEach(b => b.onclick = () => show(b.dataset.view));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + tab));
+  // les vues d'étude sont rechargées à chaque affichage (blocage pendant le jeu)
+  if (["gto", "postflop", "gtoreview"].includes(tab)) delete loaded[tab];
   if (!loaded[tab] && LOADERS[tab]) { loaded[tab] = true; LOADERS[tab](); }
   history.replaceState(null, "", location.search + "#" + tab);
 }
@@ -935,10 +937,17 @@ $("#st-save").onclick = async () => {
 function applyTheme(t) { document.documentElement.dataset.theme = t === "clair" ? "clair" : "sombre"; }
 
 // ---------------- étude : ranges préflop ----------------
+const LOCK_VIEWS = {gto: "gto", pf: "postflop", gr: "gtoreview"};
 function showLock(prefix, err) {
   const locked = err && err.status === 423;
   $(`#${prefix}-lock`).style.display = locked ? "" : "none";
-  if (locked) $(`#${prefix}-lock`).textContent = err.message;
+  if (locked) {
+    $(`#${prefix}-lock`).textContent = err.message + " La page se débloquera toute seule dès que la table sera fermée.";
+    // on réessaie tant que la vue est affichée ; sinon elle sera rechargée au prochain affichage
+    const view = LOCK_VIEWS[prefix];
+    delete loaded[view];
+    setTimeout(() => { if (CURRENT_VIEW === view && !loaded[view]) { loaded[view] = true; LOADERS[view](); } }, 4000);
+  }
   return locked;
 }
 let GTO_SPOTS = [];
