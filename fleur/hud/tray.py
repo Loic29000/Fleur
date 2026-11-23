@@ -99,6 +99,12 @@ class Tray:
         self.timer.timeout.connect(self.check_problems)
         self.timer.start(5000)
 
+        # Sauvegarde automatique : au démarrage puis vérification toutes les heures
+        self.backup_timer = QTimer()
+        self.backup_timer.timeout.connect(self.auto_backup)
+        self.backup_timer.start(3600 * 1000)
+        QTimer.singleShot(60 * 1000, self.auto_backup)  # laisse le HUD démarrer d'abord
+
     def _build_filter_menu(self) -> None:
         sub = self.menu.addMenu("Filtre des stats")
         self.filter_actions: dict[tuple[str, str], QAction] = {}
@@ -221,6 +227,13 @@ class Tray:
         except Exception as exc:
             log.exception("application d'analyse impossible")
             self.notify("Fleur", f"Analyse impossible : {exc}", warning=True)
+
+    def auto_backup(self) -> None:
+        from fleur.backup import start_auto_backup
+        try:
+            start_auto_backup(self.manager.db.path, self.manager.cfg)
+        except Exception:
+            log.exception("sauvegarde automatique impossible")
 
     def backup(self) -> None:
         from fleur.backup import backup_database

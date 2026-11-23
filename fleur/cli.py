@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("analyse", help="application d'analyse : tableau de bord, revue de mains, ranges...")
     an.add_argument("--navigateur", action="store_true", help="ouvrir dans le navigateur au lieu d'une fenêtre")
     an.add_argument("--sans-import", action="store_true", help="ne pas importer les mains (le HUD s'en charge)")
-    sub.add_parser("sauvegarde", help="sauvegarde la base dans Documents\Fleur\sauvegardes")
+    sub.add_parser("sauvegarde", help=r"sauvegarde la base dans Documents\Fleur\sauvegardes")
     lk = sub.add_parser("fuites", help="liste les fuites possibles du héros")
     lk.add_argument("--hero", help="pseudo du héros (par défaut : le plus fréquent)")
     sub.add_parser("config", help="affiche l'emplacement de la configuration")

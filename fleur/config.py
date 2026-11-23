@@ -109,6 +109,10 @@ DEFAULT_CONFIG: dict = {
     # Stats personnalisées (éditeur dans l'application d'analyse) :
     # [{"key", "label", "num", "den", "kind": pct|ratio|count, "description"}]
     "custom_stats": [],
+    # Sauvegarde automatique de la base dans Documents\Fleur\sauvegardes
+    "auto_backup": True,
+    "backup_interval_hours": 24,
+    "backup_keep": 10,
     # Nombre minimum de mains avant de colorer les stats
     "min_hands_for_colors": 10,
     "font_size": 9,

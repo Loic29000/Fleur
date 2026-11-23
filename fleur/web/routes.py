@@ -153,10 +153,21 @@ def install(app: AnalysisApp) -> None:
         from fleur.backup import backup_database
         return "json", {"path": str(backup_database(app.db()))}
 
+    @app.route("POST /api/report")
+    def report(app, _id, query, _body):
+        from fleur import diagnostics
+        out = diagnostics.make_report(diagnostics.default_report_dir(), {
+            "mains_en_base": app.db().hand_count(), "origine": "application d'analyse"})
+        return "json", {"path": str(out)}
+
     @app.route("GET /api/backups")
     def backups(app, _id, query, _body):
         from fleur.backup import list_backups
-        return "json", {"items": list_backups()}
+        from fleur.backup import last_backup_age_hours
+        age = last_backup_age_hours()
+        return "json", {"items": list_backups(), "auto": bool(app.cfg.get("auto_backup", True)),
+                        "interval": app.cfg.get("backup_interval_hours", 24),
+                        "age_hours": round(age, 1) if age is not None else None}
 
     @app.route("GET /api/allin_ev")
     def allin_ev(app, _id, query, _body):
