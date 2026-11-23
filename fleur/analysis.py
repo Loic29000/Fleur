@@ -33,7 +33,7 @@ SORTS = {
 
 def hand_list(db: Database, hero: str, position: str = "", result: str = "", min_pot_bb: float = 0,
               bb: float = 0, showdown: str = "", cards: str = "", sort: str = "date",
-              limit: int = 200, offset: int = 0, mark: str = "") -> dict:
+              limit: int = 200, offset: int = 0, mark: str = "", opponent: str = "") -> dict:
     """Mains du héros filtrées. `result` : gagnée/perdue ; `showdown` : oui/non ;
     `cards` : classe de main de départ (AKs, 77...) ; `mark` : « * » pour toute main
     marquée, ou une étiquette précise."""
@@ -55,6 +55,10 @@ def hand_list(db: Database, hero: str, position: str = "", result: str = "", min
         where.append("ph.wtsd = 1")
     elif showdown == "non":
         where.append("ph.wtsd = 0")
+    if opponent:  # pots disputés contre ce joueur : les deux ont mis de l'argent volontairement
+        where.append("ph.vpip = 1 AND EXISTS (SELECT 1 FROM player_hands o WHERE o.hand_id = ph.hand_id "
+                     "AND o.player = ? AND o.vpip = 1)")
+        params.append(opponent)
     if mark == "*":
         where.append("m.hand_id IS NOT NULL")
     elif mark:
@@ -205,3 +209,45 @@ def session_report(db: Database, hero: str, gap_minutes: int = 30) -> dict:
         "by_hour": [{"hour": h, **finish(by_hour[h])} for h in range(24) if h in by_hour],
         "by_day": [{"day": days[d], **finish(by_day[d])} for d in range(7) if d in by_day],
     }
+
+
+# --------------------------------------------------------------------------
+# Adversaires réguliers
+# --------------------------------------------------------------------------
+
+def opponents(db: Database, hero: str, min_hands: int = 50, limit: int = 150) -> list[dict]:
+    """Joueurs les plus croisés, avec tes résultats dans les pots disputés contre eux."""
+    from fleur.profile import classify
+    from fleur.stats import compute_all
+    rows = db.conn.execute(
+        "SELECT o.player, COUNT(*) n, "
+        "SUM(CASE WHEN hh.vpip = 1 AND o.vpip = 1 THEN 1 ELSE 0 END) contested, "
+        "SUM(CASE WHEN hh.vpip = 1 AND o.vpip = 1 THEN hh.net ELSE 0 END) net, "
+        "SUM(CASE WHEN hh.vpip = 1 AND o.vpip = 1 THEN hh.net_bb ELSE 0 END) net_bb, "
+        "MAX(h.played_at) last "
+        "FROM player_hands hh JOIN player_hands o ON o.hand_id = hh.hand_id AND o.player != hh.player "
+        "JOIN hands h ON h.hand_id = hh.hand_id "
+        "WHERE hh.player = ? GROUP BY o.player HAVING n >= ? ORDER BY n DESC LIMIT ?",
+        (hero, min_hands, limit),
+    ).fetchall()
+    names = [r[0] for r in rows]
+    totals = db.totals(names)
+    notes = db.notes(names)
+    cfg = {"profile_min_hands": 50}
+    out = []
+    for name, n, contested, net, net_bb, last in rows:
+        t = totals.get(name, {})
+        st = compute_all(t)
+        prof = classify(t, cfg)
+        note = notes.get(name)
+        out.append({
+            "player": name, "together": n, "contested": contested, "net_vs": round(net or 0, 2),
+            "bb100_vs": round(100 * (net_bb or 0) / contested, 1) if contested else None,
+            "last_seen": last, "hands": int(t.get("hands", 0)),
+            "vpip": st["vpip"].value, "pfr": st["pfr"].value, "3bet": st["3bet"].value,
+            "af": st["af"].value, "wtsd": st["wtsd"].value, "bb100": st["bb100"].value,
+            "profile": prof.label if prof else None, "profile_color": prof.color if prof else None,
+            "tag": note.label if note and note.tag else None, "tag_color": note.color if note else None,
+            "note": note.note if note else "",
+        })
+    return out

@@ -80,6 +80,7 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
     <button data-tab="ev">All-in EV</button>
     <button data-tab="sessions">Sessions</button>
     <button data-tab="progres">Progression</button>
+    <button data-tab="adversaires">Adversaires</button>
     <button data-tab="stats">Stats perso</button>
     <button data-tab="equite">Équité</button>
     <button data-tab="outils">Outils</button>
@@ -224,6 +225,22 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
   </section>
 </div>
 
+<!-- ======================= Adversaires ======================= -->
+<div class="tab" id="tab-adversaires">
+  <div class="row">
+    <section class="grow" style="flex-basis:640px">
+      <h2>Joueurs les plus croisés</h2>
+      <div class="filters"><label>Mains ensemble (min.) <input id="op-min" type="number" value="50" min="1" style="width:90px"></label>
+        <label>Chercher <input id="op-q" placeholder="pseudo"></label><button class="b p" id="op-go">Afficher</button></div>
+      <p class="note">« Contre lui » = pots où vous avez tous les deux mis de l'argent volontairement : tes gains et BB/100 dans ces pots.</p>
+      <div class="scroll"><table><thead><tr><th>Joueur</th><th>Profil</th><th class="n">Ensemble</th><th class="n">VPIP</th><th class="n">PFR</th>
+        <th class="n">3B</th><th class="n">AF</th><th class="n">Pots disputés</th><th class="n">Contre lui</th><th class="n">BB/100</th></tr></thead>
+        <tbody id="op-rows"></tbody></table></div>
+    </section>
+    <section class="grow" style="flex-basis:420px" id="op-detail"><h2>Fiche du joueur</h2><p class="muted">Clique sur un joueur.</p></section>
+  </div>
+</div>
+
 <!-- ======================= Stats perso ======================= -->
 <div class="tab" id="tab-stats">
   <div class="row">
@@ -332,11 +349,11 @@ function lineChart(series, unit) {
 }
 
 // ---------------- revue de mains ----------------
-let H_OFFSET = 0, CURRENT = null, STEP = 0;
+let H_OFFSET = 0, CURRENT = null, STEP = 0, OPPONENT = "";
 function handFilters() {
   return {position: $("#f-pos").value, result: $("#f-res").value, showdown: $("#f-sd").value,
     min_pot_bb: $("#f-pot").value || 0, bb: $("#f-bb").value, cards: $("#f-cards").value.trim(), sort: $("#f-sort").value,
-    mark: $("#f-mark").value};
+    mark: $("#f-mark").value, opponent: OPPONENT};
 }
 async function loadHands(append = false) {
   if (!append) H_OFFSET = 0;
@@ -346,7 +363,9 @@ async function loadHands(append = false) {
     <td title="${esc(h.comment)}">${h.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("")}${h.comment && !h.tags.length ? "✎" : ""}</td></tr>`).join("");
   $("#h-rows").innerHTML = append ? $("#h-rows").innerHTML + rows : rows;
   H_OFFSET += data.items.length;
-  $("#h-count").textContent = `${data.total} main(s) — ${H_OFFSET} affichée(s)`;
+  $("#h-count").innerHTML = `${data.total} main(s) — ${H_OFFSET} affichée(s)` + (OPPONENT ?
+    ` · pots disputés contre <b>${esc(OPPONENT)}</b> <button class="b" id="op-clear">retirer ce filtre</button>` : "");
+  if (OPPONENT) $("#op-clear").onclick = () => { OPPONENT = ""; loadHands(); };
   $("#h-more").style.display = H_OFFSET < data.total ? "" : "none";
   document.querySelectorAll("#h-rows tr").forEach(tr => tr.onclick = () => {
     document.querySelectorAll("#h-rows tr.sel").forEach(x => x.classList.remove("sel")); tr.classList.add("sel"); openHand(tr.dataset.id); });
@@ -663,7 +682,43 @@ async function loadCompare() {
 }
 $("#cp-go").onclick = () => { $("#cp-preset").value = "custom"; loadCompare(); };
 
-const LOADERS = {bord: loadDashboard, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
+// ---------------- adversaires ----------------
+let OPPS = [];
+const pct = v => v == null ? "-" : v.toFixed(0);
+async function loadOpponents() {
+  OPPS = (await api("opponents", {min_hands: $("#op-min").value || 50})).items;
+  drawOpponents();
+}
+function drawOpponents() {
+  const q = $("#op-q").value.trim().toLowerCase();
+  $("#op-rows").innerHTML = OPPS.filter(o => !q || o.player.toLowerCase().includes(q)).map(o => `<tr class="click" data-p="${esc(o.player)}">
+    <td>${o.tag ? `<span style="color:${esc(o.tag_color)}">●</span> ` : ""}${esc(o.player)}${o.note ? " ✎" : ""}</td>
+    <td>${o.profile ? `<span class="chip" style="background:${esc(o.profile_color)};color:#111">${esc(o.profile)}</span>` : ""}</td>
+    <td class="n">${o.together}</td><td class="n">${pct(o.vpip)}</td><td class="n">${pct(o.pfr)}</td><td class="n">${pct(o["3bet"])}</td>
+    <td class="n">${o.af == null ? "-" : o.af.toFixed(1)}</td><td class="n">${o.contested}</td>
+    <td class="n ${cls(o.net_vs)}">${money(o.net_vs)}</td><td class="n ${cls(o.bb100_vs)}">${o.bb100_vs == null ? "-" : o.bb100_vs.toFixed(0)}</td></tr>`).join("")
+    || `<tr><td colspan="10" class="muted">Aucun joueur avec autant de mains en commun.</td></tr>`;
+  document.querySelectorAll("#op-rows tr[data-p]").forEach(tr => tr.onclick = () => openPlayer(tr.dataset.p));
+}
+async function openPlayer(name) {
+  const d = await api("player/" + encodeURIComponent(name));
+  const tags = Object.entries(d.tags).map(([k, [label, color]]) =>
+    `<button class="chip ${d.tag === k ? "on" : ""}" data-tag="${k}" style="${d.tag === k ? `background:${color};border-color:${color}` : ""}">● ${esc(label)}</button>`).join("");
+  $("#op-detail").innerHTML = `<h2>Fiche : ${esc(d.player)}</h2>
+    <div class="ctrl">${tags}<button class="chip" data-tag="">aucune</button></div>
+    <textarea id="op-note" rows="3" style="width:100%" placeholder="Note sur ce joueur">${esc(d.note)}</textarea>
+    <div class="ctrl"><button class="b p" id="op-save">Enregistrer la note</button>
+      <button class="b" id="op-hands">Voir nos pots disputés</button><span id="op-msg" class="note"></span></div>
+    <div class="popup-box" style="background:var(--panel2);border-radius:8px;padding:8px;overflow:auto;font-size:13px">${d.popup}</div>`;
+  document.querySelectorAll("#op-detail [data-tag]").forEach(b => b.onclick = async () => {
+    await api("note", {}, {player: d.player, tag: b.dataset.tag}); openPlayer(d.player); loadOpponents(); });
+  $("#op-save").onclick = async () => { await api("note", {}, {player: d.player, note: $("#op-note").value});
+    $("#op-msg").textContent = "Enregistrée (visible aussi sur le HUD)."; loadOpponents(); };
+  $("#op-hands").onclick = () => { OPPONENT = d.player; show("mains"); loadHands(); };
+}
+$("#op-go").onclick = loadOpponents; $("#op-q").oninput = drawOpponents;
+
+const LOADERS = {bord: loadDashboard, adversaires: loadOpponents, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
   equite: () => {}, outils: loadBackups};
 
 // ---------------- mise à jour automatique ----------------

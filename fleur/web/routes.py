@@ -125,7 +125,7 @@ def install(app: AnalysisApp) -> None:
             min_pot_bb=_float(query, "min_pot_bb"), bb=_float(query, "bb"), showdown=query.get("showdown", ""),
             cards=query.get("cards", ""), sort=query.get("sort", "date"),
             limit=int(query.get("limit") or 200), offset=int(query.get("offset") or 0),
-            mark=query.get("mark", ""))
+            mark=query.get("mark", ""), opponent=query.get("opponent", ""))
 
     @app.route("GET /api/hand/*")
     def hand(app, hand_id, query, _body):
@@ -188,6 +188,41 @@ def install(app: AnalysisApp) -> None:
         q = lambda k: query.get(k) or None
         return "json", compare_periods(app.db(), _hero(app, query), (q("a_start"), q("a_end")),
                                        (q("b_start"), q("b_end")))
+
+    @app.route("GET /api/opponents")
+    def opponents(app, _id, query, _body):
+        return "json", {"items": analysis.opponents(app.db(), _hero(app, query),
+                                                    min_hands=int(query.get("min_hands") or 50))}
+
+    @app.route("GET /api/player/*")
+    def player(app, name, query, _body):
+        from urllib.parse import unquote
+        from fleur.hud.overlay import render_popup
+        name = unquote(name)
+        db = app.db()
+        totals = db.totals([name])[name]
+        if not totals.get("hands"):
+            raise ApiError(HTTPStatus.NOT_FOUND, "joueur inconnu")
+        note = db.note(name)
+        html = render_popup(name, totals, app.cfg, note, db.last_shown(name, 10), db.position_totals(name))
+        return "json", {"player": name, "popup": html, "note": note.note, "tag": note.tag, "label": note.label,
+                        "color": note.color, "tags": app.cfg.get("player_tags", {})}
+
+    @app.route("POST /api/note")
+    def save_note(app, _id, query, body):
+        from fleur.db import PlayerNote
+        from fleur.hud.notes_dialog import apply_tag
+        body = body or {}
+        name = body.get("player")
+        if not name:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "joueur manquant")
+        note = app.db().note(name)
+        if "tag" in body:
+            apply_tag(note, body.get("tag") or None, app.cfg)
+        if "note" in body:
+            note.note = (body.get("note") or "").strip()[:2000]
+        app.db().save_note(note)
+        return "json", {"ok": True}
 
     @app.route("GET /api/ranges")
     def ranges(app, _id, query, _body):
