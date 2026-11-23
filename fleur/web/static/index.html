@@ -133,11 +133,13 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
         <label>Limite <select id="f-bb"><option value="">Toutes</option></select></label>
         <label>Main <input id="f-cards" placeholder="ex. AKs, 77" style="width:90px"></label>
         <label>Marquées <select id="f-mark"><option value="">Toutes les mains</option><option value="*">★ Toutes les marquées</option></select></label>
+        <label>Comparaison GTO <select id="f-gto"><option value="">Toutes</option><option value="ecart">Mes écarts préflop</option>
+          <option value="tendance">Écarts de tendance (c-bet)</option><option value="conforme">Conformes</option></select></label>
         <label>Tri <select id="f-sort"><option value="date">Plus récentes</option><option value="pot">Plus gros pots</option><option value="perte">Plus grosses pertes</option><option value="gain">Plus gros gains</option></select></label>
         <button class="b p" id="f-go">Filtrer</button>
       </div>
       <p class="note" id="h-count"></p>
-      <div class="scroll"><table><thead><tr><th>Date</th><th>Pos.</th><th>Cartes</th><th class="n">Pot</th><th class="n">Résultat</th><th>Abatt.</th><th>Marques</th></tr></thead>
+      <div class="scroll"><table><thead><tr><th>Date</th><th>Pos.</th><th>Cartes</th><th class="n">Pot</th><th class="n">Résultat</th><th>Abatt.</th><th title="Comparaison avec la référence GTO">GTO</th><th>Marques</th></tr></thead>
       <tbody id="h-rows"></tbody></table></div>
       <div class="ctrl"><button class="b" id="h-more">Afficher plus</button></div>
     </section>
@@ -159,6 +161,7 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
         <textarea id="mk-comment" rows="2" style="width:100%" placeholder="Commentaire sur cette main"></textarea>
         <div class="ctrl"><button class="b p" id="mk-save">Enregistrer la marque</button><span id="mk-msg" class="note"></span></div>
       </div>
+      <div class="card" id="gr-box" style="display:none;margin:8px 0"></div>
       <div class="steps" id="r-steps"></div>
     </section>
   </div>
@@ -279,6 +282,22 @@ button.chip { cursor:pointer; font:inherit; font-size:12px; color:var(--text); p
       <h2>Compteurs disponibles</h2><div id="cs-counters" class="note" style="line-height:1.9"></div>
     </section>
   </div>
+</div>
+
+<!-- ======================= Étude : mes décisions ======================= -->
+<div class="tab" id="tab-gtoreview">
+  <div id="gr-lock" class="card warn" style="display:none"></div>
+  <section id="gr-body">
+    <h2>Mes décisions comparées à la référence GTO</h2>
+    <p class="note">Chaque main jouée est comparée aux ranges d'étude (préflop) et aux repères de c-bet (flop). Préflop :
+      <span style="color:var(--pos)">● conforme</span>, <span style="color:var(--neg)">● trop large</span> (main jouée que la
+      référence passe), <span style="color:var(--blue)">● trop serré</span> (main passée que la référence joue),
+      <span style="color:var(--yel)">● action différente</span>. Flop : l'optimal mélange souvent les actions, d'où des
+      « écarts de tendance » à juger sur beaucoup de mains. Le premier calcul peut prendre une minute.</p>
+    <div class="kpis" id="gr-kpis"></div>
+    <table><thead><tr><th>Situation</th><th class="n">Décisions</th><th class="n">Conformes</th><th class="n">Trop large</th>
+      <th class="n">Trop serré</th><th class="n">Autre / tendance</th><th>Mains qui reviennent le plus</th></tr></thead><tbody id="gr-rows"></tbody></table>
+  </section>
 </div>
 
 <!-- ======================= Étude : ranges préflop ======================= -->
@@ -414,7 +433,7 @@ const GROUPS = {
   mains: [["mains", "Revue de mains"], ["ev", "All-in EV"], ["sessions", "Sessions"]],
   progres: [["progres", "Objectifs et périodes"], ["ranges", "Mes mains de départ"]],
   adversaires: [["adversaires", "Adversaires"]],
-  etude: [["gto", "Ranges préflop"], ["postflop", "Stratégie postflop"], ["equite", "Équité"]],
+  etude: [["gtoreview", "Mes décisions"], ["gto", "Ranges préflop"], ["postflop", "Stratégie postflop"], ["equite", "Équité"]],
   reglages: [["reglages", "HUD"], ["stats", "Stats perso"], ["outils", "Outils"]],
 };
 const groupOf = view => Object.keys(GROUPS).find(g => GROUPS[g].some(([v]) => v === view)) || "accueil";
@@ -462,13 +481,18 @@ let H_OFFSET = 0, CURRENT = null, STEP = 0, OPPONENT = "";
 function handFilters() {
   return {position: $("#f-pos").value, result: $("#f-res").value, showdown: $("#f-sd").value,
     min_pot_bb: $("#f-pot").value || 0, bb: $("#f-bb").value, cards: $("#f-cards").value.trim(), sort: $("#f-sort").value,
-    mark: $("#f-mark").value, opponent: OPPONENT};
+    mark: $("#f-mark").value, opponent: OPPONENT, gto: $("#f-gto").value};
 }
+const GTO_COLORS = {"conforme": "var(--pos)", "trop large": "var(--neg)", "trop serré": "var(--blue)",
+  "action différente": "var(--yel)", "écart de tendance": "var(--yel)"};
+const gtoDot = st => st ? `<span title="${esc(st)}" style="color:${GTO_COLORS[st]}">●</span>` : "";
 async function loadHands(append = false) {
   if (!append) H_OFFSET = 0;
-  const data = await api("hands", {...handFilters(), offset: H_OFFSET, limit: 200});
+  let data;
+  try { data = await api("hands", {...handFilters(), offset: H_OFFSET, limit: 200}); }
+  catch (e) { if (e.status === 423) { $("#f-gto").value = ""; $("#h-count").textContent = e.message; return; } throw e; }
   const rows = data.items.map(h => `<tr class="click" data-id="${esc(h.hand_id)}"><td>${fmtDate(h.played_at)}</td><td>${esc(h.position)}</td>
-    <td>${cards(h.cards)}</td><td class="n">${h.pot_bb.toFixed(1)} bb</td><td class="n ${cls(h.net)}">${money(h.net)}</td><td>${h.showdown ? "oui" : ""}</td>
+    <td>${cards(h.cards)}</td><td class="n">${h.pot_bb.toFixed(1)} bb</td><td class="n ${cls(h.net)}">${money(h.net)}</td><td>${h.showdown ? "oui" : ""}</td><td>${gtoDot(h.gto)}</td>
     <td title="${esc(h.comment)}">${h.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("")}${h.comment && !h.tags.length ? "✎" : ""}</td></tr>`).join("");
   $("#h-rows").innerHTML = append ? $("#h-rows").innerHTML + rows : rows;
   H_OFFSET += data.items.length;
@@ -494,6 +518,22 @@ async function openHand(id) {
   document.querySelectorAll("#r-steps div[data-i]").forEach(d => d.onclick = () => { STEP = +d.dataset.i; drawHand(); });
   drawHand();
   loadMark(CURRENT.hand_id);
+  loadHandReview(CURRENT.hand_id);
+}
+const ACT_FR = {raise: "ouvrir", "3bet": "3-bet", "4bet": "4-bet", call: "suivre", fold: "passer", limp: "limp"};
+async function loadHandReview(id) {
+  const box = $("#gr-box");
+  try {
+    const r = await api("gto/hand/" + encodeURIComponent(id));
+    if (!r.decisions.length) { box.style.display = ""; box.innerHTML = `<span class="muted">Comparaison GTO : situation non couverte par les ranges d'étude.</span>`; return; }
+    box.style.display = "";
+    box.innerHTML = `<b>Comparaison GTO</b>` + r.decisions.map(d => {
+      const ref = d.spot === "cbet" ? `référence : mise ${d.reference.frequence} % du temps, taille ${esc(d.reference.taille)}`
+        : "référence : " + Object.entries(d.reference).filter(([, v]) => v > 0).map(([a, v]) => `${ACT_FR[a] || a} ${v} %`).join(", ");
+      const act = d.spot === "cbet" ? d.action : (ACT_FR[d.action] || d.action);
+      return `<div style="margin-top:4px"><span style="color:${GTO_COLORS[d.verdict]}">● ${esc(d.verdict)}</span> — ${esc(d.title)} :
+        tu as choisi <b>${esc(act)}</b> ; <span class="muted">${ref}${d.note ? " — " + esc(d.note) : ""}</span></div>`; }).join("");
+  } catch (e) { box.style.display = e.status === 423 ? "none" : ""; if (e.status !== 423) box.textContent = e.message; }
 }
 let MARK = null, MARK_TAGS = [];
 async function loadMarkTags() {
@@ -968,7 +1008,26 @@ async function loadPostflop() {
 $("#pf-go").onclick = loadPostflop;
 document.querySelectorAll("[data-ex]").forEach(b => b.onclick = () => { $("#pf-board").value = b.dataset.ex; loadPostflop(); });
 
-const LOADERS = {bord: loadDashboard, gto: loadGtoSpots, postflop: loadPostflop, reglages: loadSettings, adversaires: loadOpponents, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
+async function loadGtoReview() {
+  $("#gr-kpis").innerHTML = `<div><span>Calcul</span><b>en cours…</b></div>`;
+  let d;
+  try { d = await api("gto/review_summary"); showLock("gr"); $("#gr-body").style.display = ""; }
+  catch (e) { if (showLock("gr", e)) { $("#gr-body").style.display = "none"; return; } throw e; }
+  const t = d.totals;
+  $("#gr-kpis").innerHTML = `<div><span>Décisions comparées</span><b>${t.decisions}</b></div>
+    <div><span>Conformes</span><b class="pos">${d.conforme_pct ?? "-"} %</b></div>
+    <div><span>Trop large</span><b class="neg">${t["trop large"]}</b></div>
+    <div><span>Trop serré</span><b style="color:var(--blue)">${t["trop serré"]}</b></div>
+    <div><span>Autre / tendance</span><b style="color:var(--yel)">${t["action différente"] + t["écart de tendance"]}</b></div>`;
+  $("#gr-rows").innerHTML = d.spots.map(sp => `<tr><td>${esc(sp.title)}</td><td class="n">${sp.decisions}</td>
+    <td class="n">${sp.conforme_pct ?? "-"} %</td><td class="n">${sp["trop large"]}</td><td class="n">${sp["trop serré"]}</td>
+    <td class="n">${sp["action différente"] + sp["écart de tendance"]}</td>
+    <td style="white-space:normal">${sp.top_deviations.map(x => `<a href="#" class="chip" data-h="${x.hand}" style="color:${GTO_COLORS[x.verdict]};text-decoration:none">${x.hand} ×${x.count}</a>`).join("")}</td></tr>`).join("");
+  document.querySelectorAll("#gr-rows [data-h]").forEach(a => a.onclick = e => { e.preventDefault();
+    $("#f-cards").value = a.dataset.h; $("#f-gto").value = "ecart"; show("mains"); loadHands(); });
+}
+
+const LOADERS = {bord: loadDashboard, gtoreview: loadGtoReview, gto: loadGtoSpots, postflop: loadPostflop, reglages: loadSettings, adversaires: loadOpponents, progres: async () => { await loadGoals(); loadCompare(); }, mains: async () => { await loadMarkTags(); loadHands(); }, ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
   equite: () => {}, outils: loadBackups};
 
 // ---------------- mise à jour automatique ----------------

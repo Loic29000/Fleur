@@ -145,6 +145,13 @@ def validate_settings(body: dict) -> dict:
     return out
 
 
+def _study_allowed(app: AnalysisApp) -> None:
+    if app.table_open():
+        raise ApiError(HTTPStatus.LOCKED,
+                       "Une table Winamax est ouverte : le matériel d'étude (GTO, équité) est désactivé "
+                       "pendant le jeu, conformément aux règles Winamax. Ferme tes tables pour réviser.")
+
+
 def install(app: AnalysisApp) -> None:
     if app.routes:
         return
@@ -170,12 +177,21 @@ def install(app: AnalysisApp) -> None:
 
     @app.route("GET /api/hands")
     def hands(app, _id, query, _body):
+        from fleur.gto_review import _ensure_table, build_reviews
+        gto = query.get("gto", "")
+        if gto:
+            _study_allowed(app)
+        include_gto = not app.table_open()  # pas de verdict GTO pendant le jeu
+        hero = _hero(app, query)
+        _ensure_table(app.db())
+        if gto:
+            build_reviews(app.db(), hero)
         return "json", analysis.hand_list(
             app.db(), _hero(app, query), position=query.get("position", ""), result=query.get("result", ""),
             min_pot_bb=_float(query, "min_pot_bb"), bb=_float(query, "bb"), showdown=query.get("showdown", ""),
             cards=query.get("cards", ""), sort=query.get("sort", "date"),
             limit=int(query.get("limit") or 200), offset=int(query.get("offset") or 0),
-            mark=query.get("mark", ""), opponent=query.get("opponent", ""))
+            mark=query.get("mark", ""), opponent=query.get("opponent", ""), gto=gto, include_gto=include_gto)
 
     @app.route("GET /api/hand/*")
     def hand(app, hand_id, query, _body):
@@ -296,12 +312,6 @@ def install(app: AnalysisApp) -> None:
         app.cfg.update(changes)
         return "json", {"saved": sorted(changes)}
 
-    def _study_allowed(app):
-        if app.table_open():
-            raise ApiError(HTTPStatus.LOCKED,
-                           "Une table Winamax est ouverte : le matériel d'étude (GTO, équité) est désactivé "
-                           "pendant le jeu, conformément aux règles Winamax. Ferme tes tables pour réviser.")
-
     @app.route("GET /api/gto/spots")
     def gto_spots(app, _id, query, _body):
         from fleur.gto import SPOTS
@@ -332,6 +342,21 @@ def install(app: AnalysisApp) -> None:
                                                      / max(1, sum(v["opp"] for v in cells.values())), 1),
                                **compare_rfi(spot_id, cells)}
         return "json", out
+
+    @app.route("GET /api/gto/hand/*")
+    def gto_hand(app, hand_id, query, _body):
+        from fleur.gto_review import review_hand
+        _study_allowed(app)
+        raw = app.db().raw_hand(hand_id)
+        if not raw:
+            raise ApiError(HTTPStatus.NOT_FOUND, "main introuvable")
+        return "json", review_hand(parse_hand(raw), _hero(app, query))
+
+    @app.route("GET /api/gto/review_summary")
+    def gto_review_summary(app, _id, query, _body):
+        from fleur.gto_review import summary
+        _study_allowed(app)
+        return "json", summary(app.db(), _hero(app, query))
 
     @app.route("GET /api/gto/postflop")
     def gto_postflop(app, _id, query, _body):
