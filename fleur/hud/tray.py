@@ -73,7 +73,7 @@ class Tray:
         self._add("Réinitialiser la position des panneaux", self.manager.reset_layouts)
         self._build_filter_menu()
         self.menu.addSeparator()
-        self._add("Analyse : revue de mains, ranges, sessions…", self.open_analysis)
+        self._add("Analyse et tableau de bord du héros", self.open_analysis)
         self._add("Tableau de bord du héros", self.open_dashboard)
         self._add("Sauvegarder la base", self.backup)
         self.menu.addSeparator()
@@ -194,7 +194,16 @@ class Tray:
         self.notify("Fleur", "Configuration rechargée.")
 
     def open_analysis(self) -> None:
-        """Démarre (une fois) le serveur local d'analyse et l'ouvre dans le navigateur."""
+        """Ouvre l'application d'analyse : FleurAnalyse.exe s'il est installé à côté,
+        sinon une fenêtre (ou le navigateur) servie par ce programme."""
+        exe = Path(sys.executable).parent / "FleurAnalyse" / "FleurAnalyse.exe"
+        if getattr(sys, "frozen", False) and exe.is_file():
+            try:
+                # le HUD importe déjà les mains : l'analyse n'a pas besoin de le faire
+                subprocess.Popen([str(exe), "--sans-import"], cwd=str(exe.parent))
+                return
+            except OSError as exc:
+                log.warning("FleurAnalyse.exe impossible à lancer : %s", exc)
         try:
             if getattr(self, "_analysis", None) is None:
                 from fleur.hud import win32
@@ -203,7 +212,12 @@ class Tray:
                     self.manager.db.path, self.manager.cfg,
                     table_open=lambda: bool(self.manager.tables) or win32.winamax_table_open(),
                 ).start()
-            self._analysis.open()
+            from fleur.gui.analysis_window import open_window
+            if getattr(self, "_analysis_window", None) is not None and self._analysis_window.isVisible():
+                self._analysis_window.raise_()
+                self._analysis_window.activateWindow()
+            else:
+                self._analysis_window = open_window(self._analysis)
         except Exception as exc:
             log.exception("application d'analyse impossible")
             self.notify("Fleur", f"Analyse impossible : {exc}", warning=True)

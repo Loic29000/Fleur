@@ -39,6 +39,63 @@ def _float(query: dict, key: str) -> float:
         raise ApiError(HTTPStatus.BAD_REQUEST, f"{key} invalide")
 
 
+def _downsample(values: list[float], n: int = 1200) -> list[float]:
+    if len(values) <= n:
+        return [round(v, 2) for v in values]
+    step = (len(values) - 1) / (n - 1)
+    return [round(values[round(i * step)], 2) for i in range(n)]
+
+
+def _dashboard(app: AnalysisApp, hero: str) -> dict:
+    """Toutes les stats du héros : chiffres clés, courbes, regroupements, fuites."""
+    from fleur.dashboard import POSITION_ORDER, Group, _fmt_stake, cumulative, hero_hands, sessions
+    from fleur.hud.overlay import color_for
+    from fleur.leaks import find_leaks
+    from fleur.stats import STAT_DEFS, compute_all
+    db = app.db()
+    hands = hero_hands(db, hero)
+    groups: dict[str, dict[str, Group]] = {"position": {}, "limite": {}, "format": {}}
+    total = Group()
+    for h in hands:
+        total.add(h)
+        groups["position"].setdefault(h.position or "?", Group()).add(h)
+        groups["limite"].setdefault(_fmt_stake(h.sb, h.bb), Group()).add(h)
+        groups["format"].setdefault(f"{h.max_seats}-max", Group()).add(h)
+    money, bbs = cumulative(hands, "net"), cumulative(hands, "net_bb")
+    sess = sessions(db, hero)
+    last = sess[-1] if sess else None
+    totals = db.totals([hero])[hero]
+    stats = compute_all(totals)
+    stat_rows = []
+    for sd in STAT_DEFS:
+        sv = stats[sd.key]
+        stat_rows.append({"key": sd.key, "label": sd.label, "description": sd.description,
+                          "value": sv.format(sd.kind), "num": round(sv.num, 2), "den": round(sv.den, 2),
+                          "kind": sd.kind, "color": color_for(sd.key, sv, totals.get("hands", 0), app.cfg)})
+
+    def table(name: str, order: list[str] | None = None) -> list[dict]:
+        items = groups[name]
+        keys = sorted(items, key=lambda k: order.index(k) if k in order else 99) if order else list(items)
+        return [{"name": k, "hands": items[k].hands, "net": round(items[k].net, 2),
+                 "bb100": round(items[k].bb100, 1)} for k in keys]
+
+    return {
+        "hero": hero,
+        "kpis": {"hands": total.hands, "net": round(total.net, 2), "bb100": round(total.bb100, 2),
+                 "sd": round(money["sd"][-1], 2), "nsd": round(money["nsd"][-1], 2), "sessions": len(sess),
+                 "last_session": {"start": last.start.astimezone().isoformat(timespec="minutes"),
+                                  "hands": last.group.hands, "net": round(last.group.net, 2),
+                                  "bb100": round(last.group.bb100, 1)} if last else None},
+        "curves": {"money": {k: _downsample(v) for k, v in money.items()},
+                   "bb": {k: _downsample(v) for k, v in bbs.items()}},
+        "by_position": table("position", POSITION_ORDER), "by_stake": table("limite"),
+        "by_format": table("format"),
+        "stats": stat_rows,
+        "leaks": [{"severity": l.severity, "message": l.message}
+                  for l in find_leaks(totals, db.position_totals(hero))],
+    }
+
+
 def install(app: AnalysisApp) -> None:
     if app.routes:
         return
@@ -54,7 +111,12 @@ def install(app: AnalysisApp) -> None:
             "positions": [p for p in analysis.POSITIONS if db.conn.execute(
                 "SELECT 1 FROM player_hands WHERE player = ? AND position = ? LIMIT 1", (hero, p)).fetchone()],
             "table_open": bool(app.table_open()),
+            "last_hand": db.conn.execute("SELECT MAX(played_at) FROM hands").fetchone()[0],
         }
+
+    @app.route("GET /api/dashboard")
+    def dashboard(app, _id, query, _body):
+        return "json", _dashboard(app, _hero(app, query))
 
     @app.route("GET /api/hands")
     def hands(app, _id, query, _body):

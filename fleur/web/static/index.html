@@ -71,7 +71,8 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
 <header>
   <h1>🌸 <span>Fleur</span> analyse</h1>
   <nav id="nav">
-    <button data-tab="mains" class="on">Revue de mains</button>
+    <button data-tab="bord" class="on">Tableau de bord</button>
+    <button data-tab="mains">Revue de mains</button>
     <button data-tab="ranges">Ranges</button>
     <button data-tab="ev">All-in EV</button>
     <button data-tab="sessions">Sessions</button>
@@ -84,7 +85,26 @@ code { background:var(--panel2); padding:1px 5px; border-radius:4px; }
 <main>
 
 <!-- ======================= Revue de mains ======================= -->
-<div class="tab on" id="tab-mains">
+<!-- ======================= Tableau de bord ======================= -->
+<div class="tab on" id="tab-bord">
+  <div class="kpis" id="d-kpis"></div>
+  <section><h2>Courbe de gains (€)</h2><div id="d-money"></div></section>
+  <section><h2>Courbe de gains (big blinds)</h2><div id="d-bb"></div></section>
+  <div class="row">
+    <section class="grow"><h2>Fuites possibles</h2>
+      <p class="note">Tes stats comparées à des fourchettes indicatives de cash game 6-max, des plus importantes aux moins importantes.</p>
+      <table><tbody id="d-leaks"></tbody></table></section>
+    <section class="grow"><h2>Toutes tes stats</h2><div class="scroll" style="max-height:420px">
+      <table><thead><tr><th>Stat</th><th class="n">Valeur</th><th class="n">Échantillon</th><th>Description</th></tr></thead><tbody id="d-stats"></tbody></table></div></section>
+  </div>
+  <div class="row">
+    <section class="grow"><h2>Par position</h2><table><thead><tr><th></th><th class="n">Mains</th><th class="n">Gains</th><th class="n">BB/100</th></tr></thead><tbody id="d-pos"></tbody></table></section>
+    <section class="grow"><h2>Par limite</h2><table><thead><tr><th></th><th class="n">Mains</th><th class="n">Gains</th><th class="n">BB/100</th></tr></thead><tbody id="d-stake"></tbody></table></section>
+    <section class="grow"><h2>Par format</h2><table><thead><tr><th></th><th class="n">Mains</th><th class="n">Gains</th><th class="n">BB/100</th></tr></thead><tbody id="d-format"></tbody></table></section>
+  </div>
+</div>
+
+<div class="tab" id="tab-mains">
   <div class="row">
     <section class="grow" style="flex-basis:520px">
       <h2>Mains</h2>
@@ -343,15 +363,24 @@ function go(what) {
 }
 document.addEventListener("keydown", e => { if (!$("#tab-mains").classList.contains("on") || e.target.tagName === "INPUT") return;
   if (e.key === "ArrowRight") go("next"); if (e.key === "ArrowLeft") go("prev"); });
-$("#x-txt").onclick = () => CURRENT && window.open(`/api/hand_text/${encodeURIComponent(CURRENT.hand_id)}?t=${T}&nom=main_${CURRENT.hand_id}.txt`);
-$("#x-anon").onclick = () => CURRENT && window.open(`/api/hand_text/${encodeURIComponent(CURRENT.hand_id)}?t=${T}&anon=1&nom=main_${CURRENT.hand_id}.txt`);
+function download(blob, name) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function exportText(anon) {
+  if (!CURRENT) return;
+  const q = new URLSearchParams({t: T, ...(anon ? {anon: 1} : {})});
+  const r = await fetch(`/api/hand_text/${encodeURIComponent(CURRENT.hand_id)}?${q}`);
+  download(await r.blob(), `main_${CURRENT.hand_id}${anon ? "_anonyme" : ""}.txt`);
+}
+$("#x-txt").onclick = () => exportText(false);
+$("#x-anon").onclick = () => exportText(true);
 $("#x-png").onclick = () => {
   const svg = $("#r-svg"); if (!svg) return;
   const img = new Image(), blob = new Blob([new XMLSerializer().serializeToString(svg)], {type:"image/svg+xml"});
   img.onload = () => { const c = document.createElement("canvas"); c.width = 1800; c.height = 840;
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    c.toBlob(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b);
-      a.download = `main_${CURRENT.hand_id}_etape${STEP}.png`; a.click(); }); };
+    c.toBlob(b => download(b, `main_${CURRENT.hand_id}_etape${STEP}.png`)); };
   img.src = URL.createObjectURL(blob);
 };
 
@@ -464,8 +493,46 @@ $("#bk-go").onclick = async () => { $("#bk-out").textContent = "Sauvegarde…";
   try { const r = await api("backup", {}, {}); $("#bk-out").textContent = `Sauvegardée : ${r.path}`; loadBackups(); }
   catch (e) { $("#bk-out").innerHTML = `<span class="err">${esc(e.message)}</span>`; } };
 
-const LOADERS = {mains: () => loadHands(), ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
+async function loadDashboard() {
+  const d = await api("dashboard"), k = d.kpis, ls = k.last_session;
+  $("#d-kpis").innerHTML = `<div><span>Mains</span><b>${k.hands}</b></div>
+    <div><span>Gains</span><b class="${cls(k.net)}">${money(k.net)}</b></div>
+    <div><span>BB/100</span><b class="${cls(k.bb100)}">${k.bb100.toFixed(1)}</b></div>
+    <div><span>Avec abattage</span><b class="${cls(k.sd)}">${money(k.sd)}</b></div>
+    <div><span>Sans abattage</span><b class="${cls(k.nsd)}">${money(k.nsd)}</b></div>
+    <div><span>Dernière session</span><b class="${ls ? cls(ls.net) : ""}">${ls ? money(ls.net) : "-"}</b>
+      <span>${ls ? `${new Date(ls.start).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})} · ${ls.hands} mains` : ""}</span></div>`;
+  const curve = (c, unit) => lineChart([{name:"Sans abattage", color:"#ff6b6b", values:c.nsd},
+    {name:"Avec abattage", color:"#4fa3ff", values:c.sd}, {name:"Gains", color:"#7ddc6f", values:c.total, width:2.2}], unit);
+  $("#d-money").innerHTML = curve(d.curves.money, "€");
+  $("#d-bb").innerHTML = curve(d.curves.bb, "bb");
+  const sevColor = {forte:"var(--neg)", moyenne:"var(--yel)", faible:"var(--muted)"};
+  $("#d-leaks").innerHTML = d.leaks.map(l => `<tr><td style="color:${sevColor[l.severity]};width:80px">${l.severity}</td><td>${esc(l.message)}</td></tr>`).join("")
+    || `<tr><td class="muted">Aucune stat hors des fourchettes.</td></tr>`;
+  $("#d-stats").innerHTML = d.stats.map(s => `<tr><td><b>${esc(s.label)}</b></td><td class="n" style="color:${s.color}">${esc(s.value)}</td>
+    <td class="n muted">${s.kind === "pct" || s.kind === "ratio" ? `${s.num}/${s.den}` : ""}</td><td class="muted" style="white-space:normal">${esc(s.description)}</td></tr>`).join("");
+  const grp = rows => rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.hands}</td><td class="n ${cls(r.net)}">${money(r.net)}</td><td class="n ${cls(r.bb100)}">${r.bb100.toFixed(1)}</td></tr>`).join("");
+  $("#d-pos").innerHTML = grp(d.by_position); $("#d-stake").innerHTML = grp(d.by_stake); $("#d-format").innerHTML = grp(d.by_format);
+}
+
+const LOADERS = {bord: loadDashboard, mains: () => loadHands(), ranges: loadRanges, ev: loadEv, sessions: loadSessions, stats: loadCustom,
   equite: () => {}, outils: loadBackups};
+
+// ---------------- mise à jour automatique ----------------
+async function checkUpdates() {
+  try {
+    const m = await api("meta");
+    if (m.hands !== META.hands) {
+      META = m;
+      $("#who").textContent = `${m.hero || "?"} · ${m.hands} mains · mis à jour à ${new Date().toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"})}`;
+      const current = document.querySelector("#nav button.on").dataset.tab;
+      for (const k of Object.keys(loaded)) if (k !== current) delete loaded[k];
+      // l'onglet ouvert est rechargé sans perdre la main affichée dans le rejoueur
+      if (current === "mains") { const keep = CURRENT && CURRENT.hand_id; await loadHands(); if (keep) openHand(keep); }
+      else if (LOADERS[current] && current !== "equite" && current !== "stats") LOADERS[current]();
+    }
+  } catch (e) { /* Fleur fermé : on réessaiera */ }
+}
 
 // ---------------- démarrage ----------------
 (async () => {
@@ -474,7 +541,8 @@ const LOADERS = {mains: () => loadHands(), ranges: loadRanges, ev: loadEv, sessi
     $("#who").textContent = `${META.hero || "?"} · ${META.hands} mains en base`;
     for (const sel of ["#f-pos", "#g-pos"]) META.positions.forEach(p => $(sel).insertAdjacentHTML("beforeend", `<option>${p}</option>`));
     for (const sel of ["#f-bb", "#g-bb"]) META.stakes.forEach(b => $(sel).insertAdjacentHTML("beforeend", `<option value="${b}">bb ${b} €</option>`));
-    show(location.hash.slice(1) || "mains");
+    show(location.hash.slice(1) || "bord");
+    setInterval(checkUpdates, 8000);
   } catch (e) { document.querySelector("main").innerHTML = `<section><p class="err">Impossible de joindre Fleur : ${esc(e.message)}.
     Relance l'analyse depuis le menu de l'icône.</p></section>`; }
 })();

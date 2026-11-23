@@ -93,7 +93,8 @@ class Database:
         self.on_progress = on_progress  # rappel(texte) pendant une migration longue
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
+        # timeout : attend si l'autre programme (HUD ou analyse) écrit au même moment
+        self.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
         self._ensure_columns()
